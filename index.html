@@ -74,7 +74,6 @@ function focusMap(mode){
  mapDidFit=false;syncNadleMap(facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value)));
 }
 $('focusSuwon').onclick=()=>focusMap('Suwon');
-$('focusStarfield').onclick=()=>focusMap('Starfield');
 $('focusAll').onclick=()=>focusMap('All');
 
 const venueGuide={
