@@ -65,6 +65,18 @@ $('mapReset').onclick=()=>{mapDidFit=false;syncNadleMap(facilities.filter(f=>($(
 
 
 
+
+function focusMap(mode){
+ if(!nadleMap)return;
+ ['focusSuwon','focusStarfield','focusAll'].forEach(k=>$(k).classList.toggle('active',k==='focus'+mode));
+ if(mode==='Suwon'){nadleMap.flyTo([37.275,127.035],12,{duration:.6});return}
+ if(mode==='Starfield'){const points=['starfield','anseong'].map(k=>facilityPositions[k]).filter(Boolean);if(points.length)nadleMap.flyToBounds(points,{padding:[65,65],maxZoom:11,duration:.6});return}
+ mapDidFit=false;syncNadleMap(facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value)));
+}
+$('focusSuwon').onclick=()=>focusMap('Suwon');
+$('focusStarfield').onclick=()=>focusMap('Starfield');
+$('focusAll').onclick=()=>focusMap('All');
+
 const venueGuide={
 starfield:{address:'경기 수원시 장안구 수성로 175',intro:'별마당도서관과 다양한 문화·쇼핑·식음료 공간을 한곳에서 즐기는 복합문화공간',features:['📚 별마당도서관 · 독서와 문화 프로그램','🎭 공연·이벤트 · 방문일별 공식 일정 확인','🍽️ 식당·카페 · 가족 식사와 휴식','🧸 키즈 콘텐츠 · 매장별 이용조건 확인'],events:'https://www.starfield.co.kr/suwon/eventBenefit/events'},
 anseong:{address:'경기 안성시 공도읍 서동대로 3930-39',intro:'어린이 체험과 실내 액티비티, 쇼핑·휴식을 함께 즐길 수 있는 복합문화공간',features:['🧸 키즈 공간 · 놀이 및 체험','💦 아쿠아필드 · 별도 요금·운영정보 확인','🏃 스몹 · 연령·신장 제한 확인','🍽️ 식당·카페 · 가족 식사와 휴식'],events:'https://m.starfield.co.kr/anseong'}
