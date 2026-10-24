@@ -29,14 +29,14 @@ function card(f){const num=Math.max(1,Math.min(20,Number(party.value)||1));const
 
 const facilityPositions={anseong:[36.994,127.147],suma:[37.281,127.014],starfield:[37.287,127.001],namuk:[37.265,126.987],ggcm:[37.268,127.110],hwaseong:[37.218,126.950],gwanggyo:[37.296,127.051],suwon:[37.296,127.072],forest:[37.238,127.204],science:[37.303,127.008],garden:[37.268,127.075],traffic:[37.272,127.018],fortress:[37.282,127.021],yongin:[37.265,127.111],climate:[37.231,127.226]};
 const facilityIcons={"anseong":"🎪","suma":"🖼️","starfield":"🎭","namuk":"🌾","ggcm":"🧸","hwaseong":"🎨","gwanggyo":"🏛️","suwon":"🏺","forest":"🌳","science":"🔬","garden":"🌿","traffic":"🚦","fortress":"🏰","yongin":"📜","climate":"🌍"};
-let nadleMap=null,nadleLayer=null;
+let nadleMap=null,nadleLayer=null,eventMarkerLayer=null;
 let nadleMarkers={},mapDidFit=false,mapCategory='all';
 function mapVisibleItems(){const q=($('mapSearch').value||'').trim().toLowerCase();return facilities.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q)))}
 function syncNadleMap(items){
  if(!nadleMap||!nadleLayer)return;
  nadleLayer.clearLayers();nadleMarkers={};const bounds=[];
  const q=($('mapSearch').value||'').trim().toLowerCase();
- const visible=items.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q)));
+ const visible=items.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q))&&facilityPositions[f.id]&&roadEligible(...facilityPositions[f.id]));
  visible.forEach(f=>{
  const p=facilityPositions[f.id];if(!p)return;
  const label=f.name.replace('국립농업박물관 어린이박물관','농업박물관').replace('경기도어린이박물관','어린이박물관').replace('경기도교육청미래과학교육원','미래과학교육원').replace('용인시 기후변화체험교육센터','기후변화센터').replace('화성시어린이문화센터','어린이문화센터');
@@ -56,7 +56,7 @@ function initNadleMap(){
  nadleMap=L.map('nadleMap',{scrollWheelZoom:false,zoomControl:false}).setView([37.22,127.06],10);
  const base=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors',crossOrigin:true});base.addTo(nadleMap);base.on('tileerror',()=>{$('mapStatus').textContent='지도 배경을 불러오지 못했습니다. 인터넷 연결 또는 지도 서버 접근을 확인해 주세요. 지도 API 키는 필요하지 않습니다.'});
  L.control.zoom({position:'bottomright'}).addTo(nadleMap);
- nadleLayer=L.layerGroup().addTo(nadleMap);render();initEventsMap();setTimeout(()=>nadleMap.invalidateSize(),250);
+ nadleLayer=L.layerGroup().addTo(nadleMap);eventMarkerLayer=L.layerGroup().addTo(nadleMap);render();refreshRoadDistances();setTimeout(()=>nadleMap.invalidateSize(),250);
 }
 $('mapSearch').addEventListener('input',()=>syncNadleMap(facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value))));
 [['mapAll','all'],['mapMuseum','museum'],['mapExperience','experience'],['mapOutdoor','outdoor']].forEach(([id,value])=>{$(id).onclick=()=>{mapCategory=value;['mapAll','mapMuseum','mapExperience','mapOutdoor'].forEach(k=>$(k).classList.toggle('active',k===id));render()};});
@@ -100,17 +100,50 @@ const curatedEvents=[
 {title:'안성 남사당바우덕이 상설공연',type:'performance',startDate:'2026-04-04',endDate:'2026-11-29',place:'안성 남사당 공연장',lat:37.008,lon:127.275,family:true,url:'https://www.anseong.go.kr/tour/main.do',source:'안성시 관광 안내 · 실제 공연 회차 별도 확인'},
 {title:'불취무귀야시장 시즌2',type:'festival',startDate:'2026-10-10',endDate:'2026-10-31',place:'수원 팔달문 일대',lat:37.277,lon:127.017,family:false,url:'https://www.suwon.go.kr/culture/index.do',source:'수원시 행사 안내 · 운영일 확인'}
 ];
-let eventsMap=null,eventsLayer=null;
+let driveLimit=50,roadDistances=new Map(),roadStatus='loading',roadRequest=0;
+function pointKey(lat,lon){return Number(lat).toFixed(5)+','+Number(lon).toFixed(5)}
+function drivingKm(lat,lon){return roadDistances.get(pointKey(lat,lon))}
+function roadEligible(lat,lon){const km=drivingKm(lat,lon);return km!==undefined&&km!==null&&km<=driveLimit}
 function eventDistance(lat,lon){const rad=Math.PI/180,a=Math.sin((lat-eventOrigin[0])*rad/2)**2+Math.cos(lat*rad)*Math.cos(eventOrigin[0]*rad)*Math.sin((lon-eventOrigin[1])*rad/2)**2;return 12742*Math.asin(Math.sqrt(a))}
-function initEventsMap(){if(eventsMap||typeof L==='undefined')return;eventsMap=L.map('eventsMap',{scrollWheelZoom:false}).setView(eventOrigin,10);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(eventsMap);eventsLayer=L.layerGroup().addTo(eventsMap);L.circle(eventOrigin,{radius:50000,color:'#eb6693',weight:2,fillOpacity:.035}).addTo(eventsMap);L.circleMarker(eventOrigin,{radius:8,color:'#e43d7c',fillColor:'#fff',fillOpacity:1,weight:3}).addTo(eventsMap).bindPopup('기준: 서천 힐스테이트');setTimeout(()=>eventsMap.invalidateSize(),200)}
+async function refreshRoadDistances(){
+ const seq=++roadRequest;roadStatus='loading';render();
+ const points=[...Object.values(facilityPositions),...curatedEvents.map(e=>[e.lat,e.lon]),...publicEvents.map(e=>[e.lat,e.lon]),[36.994,127.147],[37.287,127.001]];
+ const unique=[...new Map(points.filter(p=>p&&Number.isFinite(p[0])&&Number.isFinite(p[1])&&eventDistance(p[0],p[1])<=55).map(p=>[pointKey(...p),p])).values()];
+ const result=new Map();let success=0;
+ for(let i=0;i<unique.length;i+=35){
+  const batch=unique.slice(i,i+35),coords=[eventOrigin,...batch].map(p=>p[1]+','+p[0]).join(';');
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),9000);
+  try{
+   const url='https://router.project-osrm.org/table/v1/driving/'+coords+'?sources=0&annotations=distance';
+   const response=await fetch(url,{signal:ctrl.signal});if(!response.ok)throw Error('routing '+response.status);
+   const data=await response.json();if(data.code!=='Ok'||!data.distances?.[0])throw Error('invalid routes');
+   batch.forEach((p,j)=>{const meters=data.distances[0][j+1];if(typeof meters==='number'){result.set(pointKey(...p),meters/1000);success++}});
+  }catch(e){}finally{clearTimeout(timer)}
+ }
+ if(seq!==roadRequest)return;
+ roadDistances=result;roadStatus=success?'ready':'error';render();
+}
+function renderEventMarkers(items){
+ if(!nadleMap||!eventMarkerLayer)return;
+ eventMarkerLayer.clearLayers();
+ items.forEach(e=>{
+  const emoji=e.type==='festival'?'🎉':e.type==='performance'?'🎭':'🎨';
+  const html='<span class="map-marker" style="background:#ad437e">'+emoji+'</span>';
+  L.marker([e.lat,e.lon],{icon:L.divIcon({className:'',html,iconSize:[36,36],iconAnchor:[18,18]}),title:e.title})
+   .bindPopup('<b>'+escapeHtml(e.title)+'</b><br>'+escapeHtml(e.place)+'<br><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 행사 안내 ↗</a>').addTo(eventMarkerLayer);
+ });
+}
+$('drive10').onclick=()=>setDriveLimit(10);
+$('drive50').onclick=()=>setDriveLimit(50);
+function setDriveLimit(km){driveLimit=km;['drive10','drive50'].forEach(id=>$(id).classList.toggle('active',id==='drive'+km));mapDidFit=false;render()}
 function renderEvents(){
  const today=kstDate(),from=$('eventFrom').value||today,kind=$('eventType').value,family=$('eventFamily').checked;
  const source=[...curatedEvents,...publicEvents,...nadleEvents.map(e=>({...e,type:'performance',family:false,lat:e.place&&e.place.includes('안성')?36.994:37.287,lon:e.place&&e.place.includes('안성')?127.147:127.001,source:'스타필드 공식 행사 자동 확인'}))];
- const items=source.filter(e=>e.startDate&&e.endDate&&e.endDate>=today&&e.endDate>=from&&e.lat&&e.lon&&eventDistance(e.lat,e.lon)<=50&&(kind==='all'||e.type===kind)).sort((a,b)=>(family?Number(b.family)-Number(a.family):0)||(a.startDate>b.startDate?1:a.startDate<b.startDate?-1:0));
- $('eventCount').textContent=items.length+'건 · 반경 50km'+(eventStatus==='loading'?' · 갱신 중':eventStatus==='error'?' · 자동조회 실패':'');
+ const items=source.filter(e=>e.startDate&&e.endDate&&e.endDate>=today&&e.endDate>=from&&e.lat&&e.lon&&roadEligible(e.lat,e.lon)&&(kind==='all'||e.type===kind)).sort((a,b)=>(family?Number(b.family)-Number(a.family):0)||(a.startDate>b.startDate?1:a.startDate<b.startDate?-1:0));
+ $('eventCount').textContent=items.length+'건 · 자동차 '+driveLimit+'km'+(eventStatus==='loading'?' · 갱신 중':eventStatus==='error'?' · 자동조회 실패':'');
  $('eventsList').innerHTML=items.length?items.map(e=>'<article class="card" style="margin:9px 0"><div class="tags"><span class="tag green">'+escapeHtml(e.type==='festival'?'축제':e.type==='performance'?'공연':'체험·전시')+'</span>'+(e.family?'<span class="tag">👨‍👩‍👧‍👦 가족 추천</span>':'')+'<span class="tag">'+eventDistance(e.lat,e.lon).toFixed(1)+'km</span></div><h3>'+escapeHtml(e.title)+'</h3><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(e.startDate)+' ~ '+escapeHtml(e.endDate)+'</div><div class="muted">출처: '+escapeHtml(e.source)+'</div><div class="actions"><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 확인 ↗</a></div></article>').join(''):'<div class="notice">선택 조건에 맞는 확인된 행사가 없습니다. 공식 행사 페이지에서 추가 일정을 확인해 주세요.</div>';
- $('eventsList').insertAdjacentHTML('afterbegin','<div class="notice">'+(publicSources.length?'외부 데이터: '+publicSources.map(x=>escapeHtml(x.name)+' '+(x.status==='ok'?x.count+'건':x.status==='needs_key'?'API 키 설정 필요':'조회 실패')).join(' · ')+'<br>':'')+(eventStatus==='loading'?'공식 사이트의 최신 행사를 확인하고 있습니다…':eventStatus==='error'?'공식 행사 자동 조회에 실패했습니다. 아래에는 기존 등록 행사만 표시됩니다.':eventStatus==='parsed'?'공식 사이트에서 확인된 최신 행사와 등록된 일정을 함께 표시합니다.':'자동 조회에서 확인된 행사가 없습니다. 아래 등록 일정은 실시간 확인 정보가 아닙니다.')+(eventCheckedAt?' · 조회: '+escapeHtml(new Date(eventCheckedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})):'')+'</div>');
- initEventsMap();if(eventsLayer){eventsLayer.clearLayers();items.forEach(e=>{L.marker([e.lat,e.lon]).addTo(eventsLayer).bindPopup('<b>'+escapeHtml(e.title)+'</b><br>'+escapeHtml(e.place)+'<br><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">행사 안내 ↗</a>')})}
+ $('eventsList').insertAdjacentHTML('afterbegin','<div class="notice">'+(roadStatus==='loading'?'🚗 도로 이동거리 조회 중…<br>':roadStatus==='error'?'🚗 도로 거리 조회 실패: 거리를 확인할 수 없어 핀을 숨겼습니다. 잠시 후 다시 시도하세요.<br>':'')++(publicSources.length?'외부 데이터: '+publicSources.map(x=>escapeHtml(x.name)+' '+(x.status==='ok'?x.count+'건':x.status==='needs_key'?'API 키 설정 필요':'조회 실패')).join(' · ')+'<br>':'')+(eventStatus==='loading'?'공식 사이트의 최신 행사를 확인하고 있습니다…':eventStatus==='error'?'공식 행사 자동 조회에 실패했습니다. 아래에는 기존 등록 행사만 표시됩니다.':eventStatus==='parsed'?'공식 사이트에서 확인된 최신 행사와 등록된 일정을 함께 표시합니다.':'자동 조회에서 확인된 행사가 없습니다. 아래 등록 일정은 실시간 확인 정보가 아닙니다.')+(eventCheckedAt?' · 조회: '+escapeHtml(new Date(eventCheckedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})):'')+'</div>');
+ renderEventMarkers(items);
 }
 $('eventFrom').value=kstDate();
 ['eventFrom','eventType','eventFamily'].forEach(id=>$(id).addEventListener('change',renderEvents));
@@ -127,7 +160,7 @@ async function refreshEvents(){
  eventStatus=star.status==='rejected'&&publicResult.status==='rejected'?'error':'parsed';
  eventCheckedAt=new Date().toISOString();
  }catch(e){eventStatus='error'}finally{clearTimeout(timer)}
- renderEvents();if(selectedVenueId)showVenueDetail(selectedVenueId);
+ if(typeof refreshRoadDistances==='function')refreshRoadDistances();else renderEvents();if(selectedVenueId)showVenueDetail(selectedVenueId);
 }
 function render(){renderEvents();if(selectedVenueId)showVenueDetail(selectedVenueId);else $('venueDetailBody').innerHTML='<div class="detail-hero"><div style="font-size:42px">🗺️</div><h3>어디로 나들이 갈까요?</h3><p>지도에서 원하는 장소의 그림 핀을 눌러보세요. 박물관, 미술관, 체험시설, 스타필드 모두 같은 방식으로 자세히 볼 수 있습니다.</p></div>';const items=facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value));$('count').textContent=items.length;$('cards').innerHTML=items.map(card).join('')||'<p class="muted">조건에 맞는 시설이 없습니다.</p>';syncNadleMap(items)}async function refresh(){if(loading)return;loading=true;$('refresh').disabled=true;live=null;render();$('system').textContent='국립농업박물관 공식 페이지 조회 시도 중…';try{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);let response;try{response=await fetch('/api/availability?date='+encodeURIComponent(date.value),{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timer)}if(!response.ok)throw Error('API error');const data=await response.json();if(data.verified&&data.date===date.value&&Array.isArray(data.sessions)&&data.sessions.length===5)live=data;$('system').textContent=live?'국립농업박물관 오늘의 공식 잔여석 조회 성공 · 60초마다 자동 확인':'공식 잔여석 확인 불가 · 공식 예약 페이지에서 확인해 주세요.'}catch(e){$('system').textContent='자동 조회 API에 연결할 수 없습니다. Vercel에 API와 함께 배포해야 합니다.'}finally{loading=false;$('refresh').disabled=false;render()}}$('refresh').onclick=refresh;date.onchange=refresh;party.onchange=render;$('kind').onchange=render;$('booking').onchange=render;render();refresh();refreshEvents();$('checkSuwon').onclick=async()=>{const btn=$('checkSuwon');btn.disabled=true;$('suwonDiag').textContent='공식 안내 페이지 연결 확인 중…';try{const r=await fetch('/api/suwon-status',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const j=await r.json();const a=j.sources?.[0];$('suwonDiag').textContent=(a?.reachable?'수원박물관 공식 안내 페이지 연결 확인됨':'공식 안내 페이지 연결 확인 실패')+' · '+(a?.httpStatus?'HTTP '+a.httpStatus+' · ':'')+'잔여석은 미연동 · 점검: '+new Date(j.checkedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});}catch(e){$('suwonDiag').textContent='진단 API 연결 실패. Vercel 서버 배포 여부를 확인하세요.'}finally{btn.disabled=false}};setInterval(()=>{if(!document.hidden&&date.value===kstDate())refresh()},60000);setInterval(()=>{if(!document.hidden)refreshEvents()},30*60*1000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(!eventCheckedAt||Date.now()-new Date(eventCheckedAt).getTime()>15*60*1000))refreshEvents()});
 </script><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onload="initNadleMap()" onerror="loadNadleLeafletFallback()"></script><script>function loadNadleLeafletFallback(){var x=document.createElement('script');x.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';x.onload=initNadleMap;x.onerror=function(){document.getElementById('mapStatus').textContent='지도 라이브러리를 불러오지 못했습니다. API 키 문제는 아닙니다. 네트워크 연결을 확인해 주세요.'};document.body.appendChild(x)}</script></body></html>
