@@ -30,25 +30,38 @@ function card(f){const num=Math.max(1,Math.min(20,Number(party.value)||1));const
 const facilityPositions={anseong:[36.994,127.147],suma:[37.281,127.014],starfield:[37.287,127.001],namuk:[37.265,126.987],ggcm:[37.268,127.110],hwaseong:[37.218,126.950],gwanggyo:[37.296,127.051],suwon:[37.296,127.072],forest:[37.238,127.204],science:[37.303,127.008],garden:[37.268,127.075],traffic:[37.272,127.018],fortress:[37.282,127.021],yongin:[37.265,127.111],climate:[37.231,127.226]};
 const facilityIcons={"anseong":"🎪","suma":"🖼️","starfield":"🎭","namuk":"🌾","ggcm":"🧸","hwaseong":"🎨","gwanggyo":"🏛️","suwon":"🏺","forest":"🌳","science":"🔬","garden":"🌿","traffic":"🚦","fortress":"🏰","yongin":"📜","climate":"🌍"};
 let nadleMap=null,nadleLayer=null;
+let nadleMarkers={},mapDidFit=false,mapCategory='all';
+function mapVisibleItems(){const q=($('mapSearch').value||'').trim().toLowerCase();return facilities.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q)))}
 function syncNadleMap(items){
  if(!nadleMap||!nadleLayer)return;
- nadleLayer.clearLayers();const bounds=[];
- items.forEach((f,i)=>{
-  const p=facilityPositions[f.id];if(!p)return;
-  const marker=L.marker(p,{icon:L.divIcon({className:'',html:'<span class="map-marker '+f.kind+'" aria-label="'+escapeHtml(f.name)+'">'+(facilityIcons[f.id]||'📍')+'</span>',iconSize:[38,38],iconAnchor:[19,19]})});
-  marker.bindPopup('<strong>'+escapeHtml(f.name)+'</strong><div style="margin:5px 0;font-size:12px">'+escapeHtml(f.area)+' · 위치 참고용</div><a href="'+escapeHtml(mapUrl(f.name))+'" target="_blank" rel="noopener noreferrer">지도에서 길찾기 ↗</a> · <a href="#facility-'+escapeHtml(f.id)+'">상세 보기 ↓</a>');
-  marker.on('click',()=>showVenueDetail(f.id));marker.addTo(nadleLayer);bounds.push(p);
+ nadleLayer.clearLayers();nadleMarkers={};const bounds=[];
+ const q=($('mapSearch').value||'').trim().toLowerCase();
+ const visible=items.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q)));
+ visible.forEach(f=>{
+ const p=facilityPositions[f.id];if(!p)return;
+ const label=f.name.replace('국립농업박물관 어린이박물관','농업박물관').replace('경기도어린이박물관','어린이박물관').replace('경기도교육청미래과학교육원','미래과학교육원').replace('용인시 기후변화체험교육센터','기후변화센터').replace('화성시어린이문화센터','어린이문화센터');
+ const html='<span class="map-marker '+f.kind+(selectedVenueId===f.id?' is-selected':'')+'" aria-label="'+escapeHtml(f.name)+'">'+(facilityIcons[f.id]||'📍')+'<span class="pin-label">'+escapeHtml(label)+'</span></span>';
+ const marker=L.marker(p,{icon:L.divIcon({className:'',html,iconSize:[48,48],iconAnchor:[24,24]}),title:f.name});
+ marker.on('click',()=>{showVenueDetail(f.id);updateSelectedMapPin();if(window.innerWidth<=900)$('venueDetailBody').scrollIntoView({behavior:'smooth',block:'nearest'});});
+ marker.bindPopup('<b>'+escapeHtml(f.name)+'</b><br><a href="'+escapeHtml(mapUrl(f.name))+'" target="_blank" rel="noopener noreferrer">정확한 위치·길찾기 ↗</a>');
+ marker.addTo(nadleLayer);nadleMarkers[f.id]=marker;bounds.push(p);
  });
  $('mapCount').textContent=bounds.length+'곳';
- $('mapStatus').textContent=bounds.length?'시설별 그림 핀을 눌러 정보와 길찾기를 확인하세요.':'조건에 맞는 시설이 없습니다.';
- if(bounds.length)nadleMap.fitBounds(bounds,{padding:[25,25],maxZoom:12});
+ $('mapStatus').textContent=bounds.length?'그림 핀을 선택하면 상세 정보가 나타납니다. 위치는 참고용이며 정확한 길찾기는 외부 지도를 이용하세요.':'조건에 맞는 시설이 없습니다.';
+ if(bounds.length&&!mapDidFit){nadleMap.fitBounds(bounds,{padding:[55,55],maxZoom:11});mapDidFit=true}
 }
+function updateSelectedMapPin(){Object.entries(nadleMarkers).forEach(([id,m])=>{const el=m.getElement();if(el){const pin=el.querySelector('.map-marker');if(pin)pin.classList.toggle('is-selected',id===selectedVenueId)}})}
 function initNadleMap(){
  if(nadleMap||typeof L==='undefined')return;
- nadleMap=L.map('nadleMap',{scrollWheelZoom:false}).setView([37.277,127.075],11);
- L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(nadleMap);
+ nadleMap=L.map('nadleMap',{scrollWheelZoom:false,zoomControl:false}).setView([37.22,127.06],10);
+ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(nadleMap);
+ L.control.zoom({position:'bottomright'}).addTo(nadleMap);
  nadleLayer=L.layerGroup().addTo(nadleMap);render();setTimeout(()=>nadleMap.invalidateSize(),250);
 }
+$('mapSearch').addEventListener('input',()=>syncNadleMap(facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value))));
+[['mapAll','all'],['mapMuseum','museum'],['mapExperience','experience'],['mapOutdoor','outdoor']].forEach(([id,value])=>{$(id).onclick=()=>{mapCategory=value;['mapAll','mapMuseum','mapExperience','mapOutdoor'].forEach(k=>$(k).classList.toggle('active',k===id));render()};});
+$('mapReset').onclick=()=>{mapDidFit=false;syncNadleMap(facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value)))};
+
 
 
 
@@ -59,7 +72,7 @@ anseong:{address:'경기 안성시 공도읍 서동대로 3930-39',intro:'어린
 let selectedVenueId='starfield';
 function showVenueDetail(id){
 const f=facilities.find(x=>x.id===id);if(!f)return;
-selectedVenueId=id;const info=venueGuide[id];const exhibit=permanentExhibits[id];
+selectedVenueId=id;if(typeof updateSelectedMapPin==='function')updateSelectedMapPin();const info=venueGuide[id];const exhibit=permanentExhibits[id];
 const features=info?info.features:exhibit?['🖼️ '+exhibit.title+' · '+exhibit.summary]:[f.note||'공식 홈페이지에서 자세히 확인'];
 const matches=nadleEvents.filter(e=>e.place&&((id==='starfield'&&e.place.includes('수원'))||(id==='anseong'&&e.place.includes('안성')))&&e.startDate<=date.value&&date.value<=e.endDate);
 const eventSection=info?'<h3>🎭 선택한 날짜의 행사</h3>'+(matches.length?matches.map(e=>'<div class="detail-feature"><b>'+escapeHtml(e.title)+'</b><p>'+escapeHtml(e.startDate)+' ~ '+escapeHtml(e.endDate)+'</p><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 행사 안내 ↗</a></div>').join(''):'<p class="statusline">자동 확인된 행사가 없습니다. 행사 없음이 아니라 조회 불가일 수 있습니다.</p>')+'<a class="btn" href="'+escapeHtml(info.events)+'" target="_blank" rel="noopener noreferrer">공식 행사 전체 보기 ↗</a>':'';
