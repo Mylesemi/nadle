@@ -56,7 +56,7 @@ function initNadleMap(){
  nadleMap=L.map('nadleMap',{scrollWheelZoom:false,zoomControl:false}).setView([37.22,127.06],10);
  const base=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors',crossOrigin:true});base.addTo(nadleMap);base.on('tileerror',()=>{$('mapStatus').textContent='지도 배경을 불러오지 못했습니다. 인터넷 연결 또는 지도 서버 접근을 확인해 주세요. 지도 API 키는 필요하지 않습니다.'});
  L.control.zoom({position:'bottomright'}).addTo(nadleMap);
- nadleLayer=L.layerGroup().addTo(nadleMap);render();setTimeout(()=>nadleMap.invalidateSize(),250);
+ nadleLayer=L.layerGroup().addTo(nadleMap);render();initEventsMap();setTimeout(()=>nadleMap.invalidateSize(),250);
 }
 $('mapSearch').addEventListener('input',()=>syncNadleMap(facilities.filter(f=>($('kind').value==='all'||f.kind===$('kind').value)&&($('booking').value==='all'||f.booking===$('booking').value))));
 [['mapAll','all'],['mapMuseum','museum'],['mapExperience','experience'],['mapOutdoor','outdoor']].forEach(([id,value])=>{$(id).onclick=()=>{mapCategory=value;['mapAll','mapMuseum','mapExperience','mapOutdoor'].forEach(k=>$(k).classList.toggle('active',k===id));render()};});
@@ -92,14 +92,27 @@ $('venueDetailBody').innerHTML='<div class="detail-visual '+escapeHtml(f.kind)+'
 }
 
 let nadleEvents=[],eventStatus='idle',eventCheckedAt=null;
+const eventOrigin=[37.2367333,127.0764667];
+const curatedEvents=[
+{title:'2026 화성행궁 야간개장',type:'experience',startDate:'2026-05-01',endDate:'2026-11-01',place:'수원 화성행궁',lat:37.281,lon:127.013, family:true,url:'https://www.suwon.go.kr/sw-www/sw-visitsuwon/sw-visitsuwon-03.jsp',source:'수원시 관광 안내'},
+{title:'세계유산 조선왕릉축전',type:'festival',startDate:'2026-10-17',endDate:'2026-10-25',place:'화성 융건릉',lat:37.212,lon:126.990,family:true,url:'https://web1.gg.go.kr/bbs/boardView.do?bIdx=263490602&bsIdx=838&menuId=1534',source:'경기도청 가을축제 안내'},
+{title:'2026 성남 테크아트 페스티벌',type:'festival',startDate:'2026-10-23',endDate:'2026-10-25',place:'성남 판교역 광장 일원',lat:37.394,lon:127.111,family:true,url:'https://web1.gg.go.kr/bbs/boardView.do?bIdx=263490602&bsIdx=838&menuId=1534',source:'경기도청 가을축제 안내'},
+{title:'안성 남사당바우덕이 상설공연',type:'performance',startDate:'2026-04-04',endDate:'2026-11-29',place:'안성 남사당 공연장',lat:37.008,lon:127.275,family:true,url:'https://www.anseong.go.kr/tour/main.do',source:'안성시 관광 안내 · 실제 공연 회차 별도 확인'},
+{title:'불취무귀야시장 시즌2',type:'festival',startDate:'2026-10-10',endDate:'2026-10-31',place:'수원 팔달문 일대',lat:37.277,lon:127.017,family:false,url:'https://www.suwon.go.kr/culture/index.do',source:'수원시 행사 안내 · 운영일 확인'}
+];
+let eventsMap=null,eventsLayer=null;
+function eventDistance(lat,lon){const rad=Math.PI/180,a=Math.sin((lat-eventOrigin[0])*rad/2)**2+Math.cos(lat*rad)*Math.cos(eventOrigin[0]*rad)*Math.sin((lon-eventOrigin[1])*rad/2)**2;return 12742*Math.asin(Math.sqrt(a))}
+function initEventsMap(){if(eventsMap||typeof L==='undefined')return;eventsMap=L.map('eventsMap',{scrollWheelZoom:false}).setView(eventOrigin,10);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(eventsMap);eventsLayer=L.layerGroup().addTo(eventsMap);L.circle(eventOrigin,{radius:50000,color:'#eb6693',weight:2,fillOpacity:.035}).addTo(eventsMap);L.circleMarker(eventOrigin,{radius:8,color:'#e43d7c',fillColor:'#fff',fillOpacity:1,weight:3}).addTo(eventsMap).bindPopup('기준: 서천 힐스테이트');setTimeout(()=>eventsMap.invalidateSize(),200)}
 function renderEvents(){
- const selected=date.value;
- const matches=nadleEvents.filter(e=>e.startDate<=selected&&selected<=e.endDate);
- $('eventCount').textContent=eventStatus==='loading'?'조회 중…':matches.length+'건 확인';
- const official='<a class="btn" href="https://www.starfield.co.kr/suwon/eventBenefit/events" target="_blank" rel="noopener noreferrer">수원 행사 ↗</a><a class="btn" href="https://m.starfield.co.kr/anseong" target="_blank" rel="noopener noreferrer">안성 행사 ↗</a>';
- const note=eventStatus==='loading'?'공식 홈페이지에서 최신 행사를 확인하는 중입니다…':eventStatus==='parsed'?'공식 홈페이지에 날짜가 명시된 행사만 자동 표시합니다. 월간 프로그램의 개별 공연 날짜는 공식 공지에서 확인하세요.':eventStatus==='error'?'공식 사이트에 연결하지 못했습니다. 행사가 없는 것으로 판단하지 마세요.':'공식 사이트에서 행사 날짜를 확인하지 못했습니다. 행사가 없는 것으로 판단하지 마세요.';
- $('eventsList').innerHTML='<div class="notice">'+escapeHtml(note)+'</div>'+(matches.length?matches.map(e=>'<article class="card" style="margin:10px 0"><div class="tags"><span class="tag green">'+escapeHtml(e.type)+'</span><span class="tag">'+escapeHtml(e.startDate===e.endDate?e.startDate:e.startDate+' ~ '+e.endDate)+'</span></div><h3>'+escapeHtml(e.title)+'</h3><div class="muted">'+escapeHtml(e.place)+' · 세부 시간은 공식 공지 확인</div><div class="actions"><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 행사 안내 ↗</a></div></article>').join(''):'')+'<div class="actions" style="margin-top:10px">'+official+'</div>'+(eventCheckedAt?'<p class="statusline">마지막 확인: '+escapeHtml(new Date(eventCheckedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}))+'</p>':'');
+ const today=kstDate(),from=$('eventFrom').value||today,kind=$('eventType').value,family=$('eventFamily').checked;
+ const source=[...curatedEvents,...nadleEvents.map(e=>({...e,type:'performance',family:false,lat:e.place&&e.place.includes('안성')?36.994:37.287,lon:e.place&&e.place.includes('안성')?127.147:127.001,source:'스타필드 공식 행사 자동 확인'}))];
+ const items=source.filter(e=>e.startDate&&e.endDate&&e.endDate>=today&&e.endDate>=from&&e.lat&&e.lon&&eventDistance(e.lat,e.lon)<=50&&(kind==='all'||e.type===kind)).sort((a,b)=>(family?Number(b.family)-Number(a.family):0)||(a.startDate>b.startDate?1:a.startDate<b.startDate?-1:0));
+ $('eventCount').textContent=items.length+'건 · 반경 50km';
+ $('eventsList').innerHTML=items.length?items.map(e=>'<article class="card" style="margin:9px 0"><div class="tags"><span class="tag green">'+escapeHtml(e.type==='festival'?'축제':e.type==='performance'?'공연':'체험·전시')+'</span>'+(e.family?'<span class="tag">👨‍👩‍👧‍👦 가족 추천</span>':'')+'<span class="tag">'+eventDistance(e.lat,e.lon).toFixed(1)+'km</span></div><h3>'+escapeHtml(e.title)+'</h3><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(e.startDate)+' ~ '+escapeHtml(e.endDate)+'</div><div class="muted">출처: '+escapeHtml(e.source)+'</div><div class="actions"><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 확인 ↗</a></div></article>').join(''):'<div class="notice">선택 조건에 맞는 확인된 행사가 없습니다. 공식 행사 페이지에서 추가 일정을 확인해 주세요.</div>';
+ initEventsMap();if(eventsLayer){eventsLayer.clearLayers();items.forEach(e=>{L.marker([e.lat,e.lon]).addTo(eventsLayer).bindPopup('<b>'+escapeHtml(e.title)+'</b><br>'+escapeHtml(e.place)+'<br><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">행사 안내 ↗</a>')})}
 }
+$('eventFrom').value=kstDate();
+['eventFrom','eventType','eventFamily'].forEach(id=>$(id).addEventListener('change',renderEvents));
 async function refreshEvents(){
  eventStatus='loading';renderEvents();
  try{const c=new AbortController(),t=setTimeout(()=>c.abort(),11000);let r;try{r=await fetch('/api/events?t='+Date.now(),{cache:'no-store',signal:c.signal})}finally{clearTimeout(t)}
