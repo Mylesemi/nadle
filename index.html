@@ -92,7 +92,7 @@ $('venueDetailBody').innerHTML='<div class="detail-visual '+escapeHtml(f.kind)+'
 
 }
 
-let nadleEvents=[],publicEvents=[],publicSources=[],eventStatus='idle',eventCheckedAt=null;
+let nadleEvents=[],publicEvents=[],sccEvents=[],sccStatus='idle',publicSources=[],eventStatus='idle',eventCheckedAt=null;
 const eventOrigin=[37.2367333,127.0764667];
 const curatedEvents=[
 {title:"마이펫페어 2026 광교",type:'experience',startDate:'2026-10-23',endDate:'2026-10-25',place:'수원컨벤션센터 · 광교',lat:37.2851,lon:127.0571,family:true,url:'https://www.mice365.com/venues/scc',source:'MICE365 행사 일정 · 주최사 공식 일정 재확인 필요'},
@@ -113,7 +113,7 @@ function roadEligible(lat,lon){const km=drivingKm(lat,lon);return km!==undefined
 function eventDistance(lat,lon){const rad=Math.PI/180,a=Math.sin((lat-eventOrigin[0])*rad/2)**2+Math.cos(lat*rad)*Math.cos(eventOrigin[0]*rad)*Math.sin((lon-eventOrigin[1])*rad/2)**2;return 12742*Math.asin(Math.sqrt(a))}
 async function refreshRoadDistances(){
  const seq=++roadRequest;roadStatus='loading';render();
- const points=[...Object.values(facilityPositions),...curatedEvents.map(e=>[e.lat,e.lon]),...publicEvents.map(e=>[e.lat,e.lon]),[36.994,127.147],[37.287,127.001]];
+ const points=[...Object.values(facilityPositions),...curatedEvents.map(e=>[e.lat,e.lon]),...sccEvents.map(e=>[e.lat,e.lon]),...publicEvents.map(e=>[e.lat,e.lon]),[36.994,127.147],[37.287,127.001]];
  const unique=[...new Map(points.filter(p=>p&&Number.isFinite(p[0])&&Number.isFinite(p[1])&&eventDistance(p[0],p[1])<=55).map(p=>[pointKey(...p),p])).values()];
  const result=new Map();let success=0;
  for(let i=0;i<unique.length;i+=35){
@@ -144,11 +144,11 @@ $('drive50').onclick=()=>setDriveLimit(50);
 function setDriveLimit(km){driveLimit=km;['drive10','drive50'].forEach(id=>$(id).classList.toggle('active',id==='drive'+km));mapDidFit=false;render()}
 function renderEvents(){
  const today=kstDate(),from=$('eventFrom').value||today,kind=$('eventType').value,family=$('eventFamily').checked;
- const source=[...curatedEvents,...publicEvents,...nadleEvents.map(e=>({...e,type:'performance',family:false,lat:e.place&&e.place.includes('안성')?36.994:37.287,lon:e.place&&e.place.includes('안성')?127.147:127.001,source:'스타필드 공식 행사 자동 확인'}))];
+ const source=[...curatedEvents.filter(e=>!(sccStatus==='ok'&&e.place.includes('수원컨벤션센터'))),...sccEvents,...publicEvents,...nadleEvents.map(e=>({...e,type:'performance',family:false,lat:e.place&&e.place.includes('안성')?36.994:37.287,lon:e.place&&e.place.includes('안성')?127.147:127.001,source:'스타필드 공식 행사 자동 확인'}))];
  const items=source.filter(e=>e.startDate&&e.endDate&&e.endDate>=today&&e.endDate>=from&&e.lat&&e.lon&&roadEligible(e.lat,e.lon)&&(kind==='all'||e.type===kind)).sort((a,b)=>(family?Number(b.family)-Number(a.family):0)||(a.startDate>b.startDate?1:a.startDate<b.startDate?-1:0));
  $('eventCount').textContent=items.length+'건 · 자동차 '+driveLimit+'km'+(eventStatus==='loading'?' · 갱신 중':eventStatus==='error'?' · 자동조회 실패':'');
  $('eventsList').innerHTML=items.length?items.map(e=>'<article class="card" style="margin:9px 0"><div class="tags"><span class="tag green">'+escapeHtml(e.type==='festival'?'축제':e.type==='performance'?'공연':'체험·전시')+'</span>'+(e.family?'<span class="tag">👨‍👩‍👧‍👦 가족 추천</span>':'')+'<span class="tag">'+eventDistance(e.lat,e.lon).toFixed(1)+'km</span></div><h3>'+escapeHtml(e.title)+'</h3><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(e.startDate)+' ~ '+escapeHtml(e.endDate)+'</div><div class="muted">출처: '+escapeHtml(e.source)+'</div><div class="actions"><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 확인 ↗</a></div></article>').join(''):'<div class="notice">선택 조건에 맞는 확인된 행사가 없습니다. 공식 행사 페이지에서 추가 일정을 확인해 주세요.</div>';
- $('eventsList').insertAdjacentHTML('afterbegin','<div class="notice">'+(roadStatus==='loading'?'🚗 도로 이동거리 조회 중… (조회 전에는 직선거리 추정 범위 표시)<br>':roadStatus==='error'?'🚗 도로 거리 조회 실패: 임시로 직선거리 보수 추정치를 사용합니다. 정확한 주행거리는 길찾기로 확인하세요.<br>':'')+(publicSources.length?'외부 데이터: '+publicSources.map(x=>escapeHtml(x.name)+' '+(x.status==='ok'?x.count+'건':x.status==='needs_key'?'API 키 설정 필요':'조회 실패')).join(' · ')+'<br>':'')+(eventStatus==='loading'?'공식 사이트의 최신 행사를 확인하고 있습니다…':eventStatus==='error'?'공식 행사 자동 조회에 실패했습니다. 아래에는 기존 등록 행사만 표시됩니다.':eventStatus==='parsed'?'공식 사이트에서 확인된 최신 행사와 등록된 일정을 함께 표시합니다.':'자동 조회에서 확인된 행사가 없습니다. 아래 등록 일정은 실시간 확인 정보가 아닙니다.')+(eventCheckedAt?' · 조회: '+escapeHtml(new Date(eventCheckedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})):'')+'</div>');
+ $('eventsList').insertAdjacentHTML('afterbegin','<div class="notice">'+(roadStatus==='loading'?'🚗 도로 이동거리 조회 중… (조회 전에는 직선거리 추정 범위 표시)<br>':roadStatus==='error'?'🚗 도로 거리 조회 실패: 임시로 직선거리 보수 추정치를 사용합니다. 정확한 주행거리는 길찾기로 확인하세요.<br>':'')+(publicSources.length?'수원컨벤션센터 '+(sccStatus==='ok'?sccEvents.length+'건 자동조회':sccStatus==='error'?'조회 실패':'일정 확인 불가')+' · 외부 데이터: '+publicSources.map(x=>escapeHtml(x.name)+' '+(x.status==='ok'?x.count+'건':x.status==='needs_key'?'API 키 설정 필요':'조회 실패')).join(' · ')+'<br>':'')+(eventStatus==='loading'?'공식 사이트의 최신 행사를 확인하고 있습니다…':eventStatus==='error'?'공식 행사 자동 조회에 실패했습니다. 아래에는 기존 등록 행사만 표시됩니다.':eventStatus==='parsed'?'공식 사이트에서 확인된 최신 행사와 등록된 일정을 함께 표시합니다.':'자동 조회에서 확인된 행사가 없습니다. 아래 등록 일정은 실시간 확인 정보가 아닙니다.')+(eventCheckedAt?' · 조회: '+escapeHtml(new Date(eventCheckedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})):'')+'</div>');
  renderEventMarkers(items);
 }
 $('eventFrom').value=kstDate();
@@ -157,13 +157,15 @@ async function refreshEvents(){
  eventStatus='loading';renderEvents();
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),13000);
  try{
- const [star,publicResult]=await Promise.allSettled([
+ const [star,publicResult,sccResult]=await Promise.allSettled([
  fetch('/api/events?t='+Date.now(),{cache:'no-store',signal:controller.signal}).then(r=>{if(!r.ok)throw Error('star');return r.json()}),
- fetch('/api/public-events?t='+Date.now(),{cache:'no-store',signal:controller.signal}).then(r=>{if(!r.ok)throw Error('public');return r.json()})
+ fetch('/api/public-events?t='+Date.now(),{cache:'no-store',signal:controller.signal}).then(r=>{if(!r.ok)throw Error('public');return r.json()}),
+ fetch('/api/scc-events?t='+Date.now(),{cache:'no-store',signal:controller.signal}).then(r=>{if(!r.ok)throw Error('scc');return r.json()})
  ]);
  if(star.status==='fulfilled'){const j=star.value;nadleEvents=Array.isArray(j.events)?j.events.filter(e=>e.title&&e.startDate&&e.endDate&&/^https:\/\//.test(e.url)):[]}
  if(publicResult.status==='fulfilled'){const j=publicResult.value;publicEvents=Array.isArray(j.events)?j.events.filter(e=>e.title&&e.startDate&&e.endDate&&Number.isFinite(e.lat)&&Number.isFinite(e.lon)&&/^https:\/\//.test(e.url)):[];publicSources=Array.isArray(j.sources)?j.sources:[]}
- eventStatus=star.status==='rejected'&&publicResult.status==='rejected'?'error':'parsed';
+ if(sccResult.status==='fulfilled'){const j=sccResult.value;sccStatus=j.status||'unverified';sccEvents=Array.isArray(j.events)?j.events.filter(e=>e.title&&e.startDate&&e.endDate&&Number.isFinite(e.lat)&&Number.isFinite(e.lon)&&/^https:\/\//.test(e.url)):[]}else{sccStatus='error';sccEvents=[]}
+ eventStatus=star.status==='rejected'&&publicResult.status==='rejected'&&sccResult.status==='rejected'?'error':'parsed';
  eventCheckedAt=new Date().toISOString();
  }catch(e){eventStatus='error'}finally{clearTimeout(timer)}
  if(typeof refreshRoadDistances==='function')refreshRoadDistances();else renderEvents();if(selectedVenueId)showVenueDetail(selectedVenueId);
