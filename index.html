@@ -164,10 +164,10 @@ function renderEventsCalendar(items,from,until){
   const dayEvents=items.filter(e=>e.startDate<=d&&e.endDate>=d);
   if(!dayEvents.length)return '';
   const rows=slots.map(h=>{
-   const matched=dayEvents.filter(e=>{const t=e.startTime||e.time||'';return /^\\d{1,2}:\\d{2}/.test(t)&&Number(t.split(':')[0])===h});
+   const matched=dayEvents.filter(e=>{const t=e.startTime||e.time||'';return /^\d{1,2}:\d{2}/.test(t)&&Number(t.split(':')[0])===h});
    return matched.length?'<div class="calendar-hour"><b>'+String(h).padStart(2,'0')+':00</b>'+matched.map(e=>'<a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(e.title)+'</a>').join(' · ')+'</div>':'';
   }).join('');
-  const unknown=dayEvents.filter(e=>!/^\\d{1,2}:\\d{2}/.test(e.startTime||e.time||''));
+  const unknown=dayEvents.filter(e=>!/^\d{1,2}:\d{2}/.test(e.startTime||e.time||''));
   return '<section class="calendar-day"><h3>'+d+' ('+['일','월','화','수','목','금','토'][new Date(d+'T12:00:00Z').getUTCDay()]+')</h3>'+rows+(unknown.length?'<div class="calendar-hour"><b>시간 미정</b><div>'+unknown.map(e=>'<a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(e.title)+'</a>').join(' · ')+'</div></div>':'')+'</section>';
  }).filter(Boolean);
  root.innerHTML='<p class="statusline">시간 정보가 공식 데이터에 없는 행사는 ‘시간 미정’에 표시합니다. 행사별 정확한 시작 시간은 공식 안내를 확인하세요.</p>'+(cards.join('')||'<p class="notice">이 기간에 등록된 행사가 없습니다.</p>');
