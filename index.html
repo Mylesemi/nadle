@@ -233,14 +233,23 @@ function venueNameFromText(text){
  return '';
 }
 function venueLooksLikeAddress(place){return /(?:특별시|광역시|특별자치시|특별자치도|경기도|충청|전라|경상|강원|제주|시\s|군\s|구\s).*(?:로|길|동|읍|면)\s*(?:지하\s*)?\d+/.test(place)||/(?:로|길)\s*(?:지하\s*)?\d+/.test(place)}
+function venueNameFromGuide(event){
+ if(!event)return '';
+ const fields=[event.venueName,event.eventPlace,event.locationName,event.facilityName,event.placeName,event.venue,event.location];
+ for(const field of fields){const v=String(field||'').trim();if(v&&!venueLooksLikeAddress(v)&&v.length<70)return v}
+ const guide=[event.description,event.overview,event.introduction,event.guide,event.info,event.content].filter(Boolean).join(' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
+ const explicit=guide.match(/(?:행사\s*장소|개최\s*장소|공연\s*장소|전시\s*장소|진행\s*장소|장소|행사장|개최지|오시는\s*길)\s*[:：]\s*([^.,\n|]{2,65})/);
+ if(explicit){const v=explicit[1].split(/\s+(?:주소|문의|기간|시간|주최|주관)\s*[:：]/)[0].trim();if(v&&!venueLooksLikeAddress(v))return v}
+ return venueNameFromText(guide);
+}
 function venueDisplayName(place,event){
  const raw=String(place||'').replace(/^#+\s*/,'').trim();
  for(const rule of VENUE_NAME_BY_ADDRESS)if(rule.pattern.test(raw))return rule.name;
  const named=raw.match(/(?:장소|행사장|시설명)\s*[:：]\s*([^,|]+)/);if(named)return named[1].trim();
  const placeHint=venueNameFromText(raw);if(placeHint)return placeHint;
- if(venueLooksLikeAddress(raw)&&event){
-  const titleHint=venueNameFromText(event.title);
-  if(titleHint)return titleHint;
+ if(venueLooksLikeAddress(raw)){
+  const guideName=venueNameFromGuide(event);if(guideName)return guideName;
+  const titleHint=venueNameFromText(event?.title);if(titleHint)return titleHint;
  }
  return raw;
 }
