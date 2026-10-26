@@ -183,9 +183,31 @@ async function refreshRoadDistances(){
  roadDistances=result;roadStatus=success?'ready':'error';render();
 }
 function normalizeEventText(value){return String(value||'').toLowerCase().normalize('NFKC').replace(/\\([^)]*\\)/g,'').replace(/20\\d{2}년?/g,'').replace(/제\\d+회/g,'').replace(/[^a-z0-9가-힣]/g,'').replace(/(공식홈페이지|행사안내|축제정보)$/,'')}
-function recurringProgramId(e){const title=normalizeEventText(e.title),place=normalizeEventText(e.place);if(/별마당/.test(title+' '+place)&&/스타필드/.test(title+' '+place)){const location=/안성/.test(place)?'anseong':/수원/.test(place)?'suwon':'other';return 'recurring:starfield:'+location+':'+(title.includes('별마당')?'byeolmadang':'program')}return ''}
-function recurringObjectKey(e){return recurringProgramId(e)||''}
-function consolidateRecurring(events){const recurring=new Map(),regular=[];for(const e of events){const id=recurringObjectKey(e);if(!id){regular.push(e);continue}const prev=recurring.get(id);if(!prev){recurring.set(id,{...e,recurringId:id,occurrences:[{startDate:e.startDate,endDate:e.endDate,title:e.title,url:e.url}]});continue}const occurrence={startDate:e.startDate,endDate:e.endDate,title:e.title,url:e.url};if(!prev.occurrences.some(x=>x.startDate===occurrence.startDate&&x.endDate===occurrence.endDate))prev.occurrences.push(occurrence);if(e.endDate>prev.endDate){prev.startDate=e.startDate;prev.endDate=e.endDate;prev.title=e.title;prev.url=e.url}prev.occurrences.sort((a,b)=>a.startDate.localeCompare(b.startDate))}return [...regular,...recurring.values()]}
+function recurringProgramId(e){
+ if(e.recurringId)return e.recurringId;
+ const raw=String(e.title||'').normalize('NFKC'),title=normalizeEventText(raw),place=normalizeEventText(e.place);
+ const venue=/스타필드/.test(place)?'starfield'+(/안성/.test(place)?'anseong':/수원/.test(place)?'suwon':'unknown'):/어린이박물관|농업박물관|수원박물관|광교박물관/.test(place)?'museum'+place:'';
+ if(!venue)return '';
+ // Only explicitly recurring programs; a venue alone must never identify a program.
+ const recurrence=/매월|매주|정기|월간|상설|별마당|키즈프로그램/.test(raw+' '+String(e.source||''));if(!recurrence)return '';
+ let program=title.replace(/20\\d{2}/g,'').replace(/\\d{1,2}월/g,'').replace(/\\d{1,2}일/g,'').replace(/(매월|매주|정기|월간|프로그램|일정|안내|행사정보|상설)/g,'');
+ if(program.length<4)return '';
+ return 'recurring:'+venue+':'+program;
+}
+function recurringObjectKey(e){return recurringProgramId(e)}
+function consolidateRecurring(events){
+ const recurring=new Map(),regular=[];
+ for(const e of events){
+  const id=recurringObjectKey(e);
+  if(!id){regular.push(e);continue}
+  const prev=recurring.get(id),occurrence={startDate:e.startDate,endDate:e.endDate,title:e.title,url:e.url};
+  if(!prev){recurring.set(id,{...e,recurringId:id,occurrences:[occurrence]});continue}
+  if(!prev.occurrences.some(x=>x.startDate===occurrence.startDate&&x.endDate===occurrence.endDate&&normalizeEventText(x.title)===normalizeEventText(occurrence.title)))prev.occurrences.push(occurrence);
+  if(e.endDate>prev.endDate){prev.startDate=e.startDate;prev.endDate=e.endDate;prev.title=e.title;prev.url=e.url}
+  prev.occurrences.sort((a,b)=>a.startDate.localeCompare(b.startDate));
+ }
+ return [...regular,...recurring.values()];
+}
 function expandRecurring(events){return events.flatMap(e=>e.occurrences?.length?e.occurrences.map(o=>({...e,...o,recurringId:e.recurringId})): [e])}
 function eventKey(e){return normalizeEventText(e.title)+'|'+(e.startDate||'').slice(0,7)+'|'+normalizeEventText(e.place)}
 function eventNear(a,b){const lat=(Number(a.lat)-Number(b.lat))*111,lon=(Number(a.lon)-Number(b.lon))*88;return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.hypot(lat,lon)<0.45}
