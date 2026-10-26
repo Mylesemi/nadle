@@ -251,6 +251,7 @@ function venueDisplayName(place,event){
   const guideName=venueNameFromGuide(event);if(guideName)return guideName;
   const titleHint=venueNameFromText(event?.title);if(titleHint)return titleHint;
  }
+ if(event&&Number.isFinite(Number(event.lat))&&Number.isFinite(Number(event.lon))){const candidate=nearbyVenueNames.get(nearbyVenueKey(event));if(candidate?.name&&candidate.confidence==='medium')return candidate.name}
  return raw;
 }
 const nearbyVenueNames=new Map(),nearbyVenuePending=new Set();
@@ -264,14 +265,14 @@ function scheduleNearbyVenueLookup(events){
   if(!Number.isFinite(Number(e.lat))||!Number.isFinite(Number(e.lon)))continue;
   const key=nearbyVenueKey(e);
   if(nearbyVenueNames.has(key)||nearbyVenuePending.has(key))continue;
-  const cached=localStorage.getItem('nadle:venue:'+key);
-  if(cached){try{const entry=JSON.parse(cached);if(Date.now()-entry.at<30*86400000){nearbyVenueNames.set(key,entry.name||'');continue}}catch{}}
+  let cached=null;try{cached=localStorage.getItem('nadle:venue:'+key)}catch{}
+  if(cached){try{const entry=JSON.parse(cached);if(Date.now()-entry.at<30*86400000){nearbyVenueNames.set(key,{name:entry.name||'',confidence:entry.confidence||'none'});continue}}catch{}}
   venueLookupBudget--;nearbyVenuePending.add(key);
   fetch('/api/venue-lookup?lat='+encodeURIComponent(e.lat)+'&lon='+encodeURIComponent(e.lon)).then(r=>r.ok?r.json():null).then(data=>{
-   const name=String(data?.name||'').trim();
-   nearbyVenueNames.set(key,name);
-   try{localStorage.setItem('nadle:venue:'+key,JSON.stringify({name,at:Date.now()}))}catch{}
-   if(name)renderEvents();
+   const name=String(data?.name||'').trim(),confidence=data?.confidence==='medium'?'medium':'none';
+   nearbyVenueNames.set(key,{name,confidence});
+   try{localStorage.setItem('nadle:venue:'+key,JSON.stringify({name,confidence,at:Date.now()}))}catch{}
+   if(name&&confidence==='medium')renderEvents();
   }).catch(()=>{}).finally(()=>nearbyVenuePending.delete(key));
  }
 }
