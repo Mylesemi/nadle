@@ -90,7 +90,7 @@ function syncNadleMap(items){
  if(!nadleMap||!nadleLayer)return;
  nadleLayer.clearLayers();nadleMarkers={};const bounds=[];
  const q=($('mapSearch').value||'').trim().toLowerCase();
- const visible=items.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q))&&facilityPositions[f.id]&&!visibleEventPlaces.has(placeKey(...facilityPositions[f.id]))&&roadEligible(...facilityPositions[f.id]));
+ const visible=items.filter(f=>(mapCategory==='all'||f.kind===mapCategory)&&(!q||(f.name+' '+f.area+' '+(f.note||'')).toLowerCase().includes(q))&&facilityPositions[f.id]&&![...visibleEventPlaces.values()].some(events=>events.some(e=>samePlaceCoordinates(facilityPositions[f.id],[e.lat,e.lon])))&&roadEligible(...facilityPositions[f.id]));
  visible.forEach(f=>{
  const p=facilityPositions[f.id];if(!p)return;
  const label=f.name.replace('국립농업박물관 어린이박물관','농업박물관').replace('경기도어린이박물관','어린이박물관').replace('경기도교육청미래과학교육원','미래과학교육원').replace('용인시 기후변화체험교육센터','기후변화센터').replace('화성시어린이문화센터','어린이문화센터');
@@ -182,21 +182,26 @@ async function refreshRoadDistances(){
  if(seq!==roadRequest)return;
  roadDistances=result;roadStatus=success?'ready':'error';render();
 }
-function eventKey(e){const clean=v=>String(v||'').toLowerCase().replace(/[^a-z0-9가-힣]/g,'');return clean(e.title)+'|'+e.startDate+'|'+e.endDate+'|'+(Math.round(Number(e.lat)*1000))+'|'+(Math.round(Number(e.lon)*1000))}
-function uniqueEvents(events){const seen=new Map();for(const e of events){const key=eventKey(e);if(!seen.has(key))seen.set(key,e);else{const prev=seen.get(key);if((!prev.url||prev.url==='#')&&e.url)seen.set(key,e)}}return [...seen.values()]}
+function normalizeEventText(value){return String(value||'').toLowerCase().normalize('NFKC').replace(/\\([^)]*\\)/g,'').replace(/20\\d{2}년?/g,'').replace(/제\\d+회/g,'').replace(/[^a-z0-9가-힣]/g,'').replace(/(공식홈페이지|행사안내|축제정보)$/,'')}
+function eventKey(e){return normalizeEventText(e.title)+'|'+(e.startDate||'').slice(0,7)+'|'+normalizeEventText(e.place)}
+function eventNear(a,b){const lat=(Number(a.lat)-Number(b.lat))*111,lon=(Number(a.lon)-Number(b.lon))*88;return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.hypot(lat,lon)<0.45}
+function sameEvent(a,b){const an=normalizeEventText(a.title),bn=normalizeEventText(b.title);if(!an||!bn)return false;const titleMatch=an===bn||(Math.min(an.length,bn.length)>=8&&(an.includes(bn)||bn.includes(an)));if(!titleMatch)return false;const overlap=a.startDate<=b.endDate&&b.startDate<=a.endDate;const sameMonth=(a.startDate||'').slice(0,7)===(b.startDate||'').slice(0,7);const samePlace=normalizeEventText(a.place)===normalizeEventText(b.place)||eventNear(a,b);return (overlap||sameMonth)&&samePlace}
+function eventQuality(e){return (e.url&&/^https:\/\//.test(e.url)?3:0)+(e.source&&/공식/.test(e.source)?2:0)+(e.startTime?1:0)}
+function uniqueEvents(events){const result=[];for(const e of events){if(!e||!e.title||!e.startDate||!e.endDate)continue;const idx=result.findIndex(x=>sameEvent(x,e));if(idx<0){result.push(e);continue}const prev=result[idx],best=eventQuality(e)>eventQuality(prev)?e:prev;result[idx]={...best,startDate:prev.startDate<e.startDate?prev.startDate:e.startDate,endDate:prev.endDate>e.endDate?prev.endDate:e.endDate}}return result}
 function placeKey(lat,lon){return Number(lat).toFixed(3)+','+Number(lon).toFixed(3)}
+function samePlaceCoordinates(a,b){const lat=(Number(a[0])-Number(b[0]))*111,lon=(Number(a[1])-Number(b[1]))*88;return Math.hypot(lat,lon)<0.35}
 let visibleEventPlaces=new Map();
 function renderEventMarkers(items){
  if(!nadleMap||!eventMarkerLayer)return;
  eventMarkerLayer.clearLayers();
  visibleEventPlaces=new Map();
- for(const e of items){const key=placeKey(e.lat,e.lon);if(!visibleEventPlaces.has(key))visibleEventPlaces.set(key,[]);visibleEventPlaces.get(key).push(e)}
+ for(const e of uniqueEvents(items)){const existing=[...visibleEventPlaces.keys()].find(key=>{const point=visibleEventPlaces.get(key)[0];return samePlaceCoordinates([point.lat,point.lon],[e.lat,e.lon])});const key=existing||placeKey(e.lat,e.lon);if(!visibleEventPlaces.has(key))visibleEventPlaces.set(key,[]);visibleEventPlaces.get(key).push(e)}
  for(const [key,events] of visibleEventPlaces){
-  const e=events[0],f=facilities.find(x=>facilityPositions[x.id]&&placeKey(...facilityPositions[x.id])===key);
+  const e=events[0],f=facilities.find(x=>facilityPositions[x.id]&&samePlaceCoordinates(facilityPositions[x.id],[e.lat,e.lon]));
   const emoji=events.length>1?'🎟️':e.type==='festival'?'🎉':e.type==='performance'?'🎭':'🎨';
   const label=f?f.name:e.place;
   const html='<span class="map-marker" style="background:#ad437e">'+emoji+(events.length>1?'<span class="pin-label">'+events.length+'개 행사</span>':'')+'</span>';
-  const links=events.map(x=>'<div style="padding:5px 0;border-top:1px solid #eee"><b>'+escapeHtml(x.title)+'</b><br>'+escapeHtml(x.startDate)+' ~ '+escapeHtml(x.endDate)+'<br><a href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer">공식 행사 안내 ↗</a></div>').join('');
+  const links=uniqueEvents(events).map(x=>'<div style="padding:5px 0;border-top:1px solid #eee"><b>'+escapeHtml(x.title)+'</b><br>'+escapeHtml(x.startDate)+' ~ '+escapeHtml(x.endDate)+'<br><a href="'+escapeHtml(x.url)+'" target="_blank" rel="noopener noreferrer">공식 행사 안내 ↗</a></div>').join('');
   const venue=f?'<div><a href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener noreferrer">장소 공식 안내 ↗</a></div>':'';
   L.marker([e.lat,e.lon],{icon:L.divIcon({className:'',html,iconSize:[36,36],iconAnchor:[18,18]}),title:label+' · '+events.length+'개 행사'})
    .bindPopup('<b>'+escapeHtml(label)+'</b>'+venue+links,{maxHeight:320}).addTo(eventMarkerLayer);
