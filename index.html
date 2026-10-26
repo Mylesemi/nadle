@@ -253,6 +253,28 @@ function venueDisplayName(place,event){
  }
  return raw;
 }
+const nearbyVenueNames=new Map(),nearbyVenuePending=new Set();
+let venueLookupBudget=4;
+function nearbyVenueKey(e){return Number(e.lat).toFixed(4)+','+Number(e.lon).toFixed(4)}
+function scheduleNearbyVenueLookup(events){
+ for(const e of events){
+  if(venueLookupBudget<=0)break;
+  if(!venueLooksLikeAddress(String(e.place||'')))continue;
+  if(venueDisplayName(e.place,e)!==String(e.place||'').replace(/^#+\s*/,'').trim())continue;
+  if(!Number.isFinite(Number(e.lat))||!Number.isFinite(Number(e.lon)))continue;
+  const key=nearbyVenueKey(e);
+  if(nearbyVenueNames.has(key)||nearbyVenuePending.has(key))continue;
+  const cached=localStorage.getItem('nadle:venue:'+key);
+  if(cached){try{const entry=JSON.parse(cached);if(Date.now()-entry.at<30*86400000){nearbyVenueNames.set(key,entry.name||'');continue}}catch{}}
+  venueLookupBudget--;nearbyVenuePending.add(key);
+  fetch('/api/venue-lookup?lat='+encodeURIComponent(e.lat)+'&lon='+encodeURIComponent(e.lon)).then(r=>r.ok?r.json():null).then(data=>{
+   const name=String(data?.name||'').trim();
+   nearbyVenueNames.set(key,name);
+   try{localStorage.setItem('nadle:venue:'+key,JSON.stringify({name,at:Date.now()}))}catch{}
+   if(name)renderEvents();
+  }).catch(()=>{}).finally(()=>nearbyVenuePending.delete(key));
+ }
+}
 function venueGroupKey(e){const place=normalizeEventText(venueDisplayName(e.place,e));if(/수원컨벤션센터|suwonconventioncenter/.test(place))return 'venue:suwon-convention';if(/스타필드/.test(place))return 'venue:starfield:'+place;if(/어린이박물관|농업박물관/.test(place))return 'venue:museum:'+place;return 'venue:'+place}
 function groupEventsByVenue(items){const groups=new Map();for(const e of items){const key=venueGroupKey(e);if(!groups.has(key))groups.set(key,{key,place:venueDisplayName(e.place,e),address:e.place,events:[],lat:e.lat,lon:e.lon});groups.get(key).events.push(e)}return [...groups.values()]}
 function venueEventCard(e){return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'}
@@ -307,6 +329,7 @@ function renderEvents(){
  const source=expandRecurring(consolidateRecurring(uniqueEvents(rawSource)));
  const items=uniqueEvents(source).filter(e=>e.startDate&&e.endDate&&e.endDate>=today&&e.endDate>=from&&e.startDate<=until&&e.lat&&e.lon&&roadEligible(e.lat,e.lon)&&(kind==='all'||e.type===kind)).sort((a,b)=>{const aDate=a.startDate<today?today:a.startDate,bDate=b.startDate<today?today:b.startDate;return aDate.localeCompare(bDate)||((drivingKm(a.lat,a.lon)??eventDistance(a.lat,a.lon)*1.4)-(drivingKm(b.lat,b.lon)??eventDistance(b.lat,b.lon)*1.4))||a.title.localeCompare(b.title)});
  latestFavoriteEvents=uniqueEvents(source);
+ scheduleNearbyVenueLookup(items);
  const listItems=collapseRecurringForList(items),venueGroups=groupEventsByVenue(listItems);
  $('eventCount').textContent=venueGroups.length+'곳 · '+listItems.length+'건 · 자동차 '+driveLimit+'km'+(eventStatus==='loading'?' · 갱신 중':eventStatus==='error'?' · 자동조회 실패':'');
  $('eventsList').innerHTML=venueGroups.length?venueGroups.map(venueGroupCard).join(''):'<div class="notice">선택 조건에 맞는 확인된 행사가 없습니다. 공식 행사 페이지에서 추가 일정을 확인해 주세요.</div>';
