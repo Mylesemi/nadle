@@ -213,8 +213,18 @@ function expandRecurring(events){return events.flatMap(e=>e.occurrences?.length?
 function recurringDisplayTitle(e){if(!e.recurringId)return e.title;return String(e.title||'').replace(/(?:20\\d{2}년?\\s*)?\\d{1,2}월(?:호|의|프로그램|일정)?/g,'').replace(/\\s{2,}/g,' ').replace(/^[-–·: ]+|[-–·: ]+$/g,'').trim()||e.title}
 function recurringSchedule(e){return e.occurrences?.map(o=>o.startDate===o.endDate?o.startDate:o.startDate+' ~ '+o.endDate).join(' · ')||e.startDate+' ~ '+e.endDate}
 function collapseRecurringForList(items){const grouped=new Map(),result=[];for(const e of items){if(!e.recurringId){result.push(e);continue}if(!grouped.has(e.recurringId)){const item={...e,occurrences:[]};grouped.set(e.recurringId,item);result.push(item)}const target=grouped.get(e.recurringId);if(!target.occurrences.some(o=>o.startDate===e.startDate&&o.endDate===e.endDate))target.occurrences.push({startDate:e.startDate,endDate:e.endDate,title:e.title,url:e.url});}for(const e of grouped.values()){e.occurrences.sort((a,b)=>a.startDate.localeCompare(b.startDate));e.title=recurringDisplayTitle(e)}return result}
-function venueGroupKey(e){const place=normalizeEventText(e.place);if(/수원컨벤션센터|suwonconventioncenter/.test(place))return 'venue:suwon-convention';if(/스타필드/.test(place))return 'venue:starfield:'+(/안성/.test(place)?'anseong':/수원/.test(place)?'suwon':place);if(/어린이박물관|농업박물관/.test(place))return 'venue:museum:'+place;return 'venue:'+place}
-function groupEventsByVenue(items){const groups=new Map();for(const e of items){const key=venueGroupKey(e);if(!groups.has(key))groups.set(key,{key,place:e.place,events:[],lat:e.lat,lon:e.lon});groups.get(key).events.push(e)}return [...groups.values()]}
+const VENUE_NAME_BY_ADDRESS=[
+ {pattern:/도청로\\s*(?:지하\\s*)?36(?:번길)?(?:\\D|$)/,name:'컬처라운지 경기'},
+ {pattern:/수원컨벤션센터|suwon convention center/i,name:'수원컨벤션센터'}
+];
+function venueDisplayName(place){
+ const raw=String(place||'').replace(/^#+\\s*/,'').trim();
+ for(const rule of VENUE_NAME_BY_ADDRESS)if(rule.pattern.test(raw))return rule.name;
+ const named=raw.match(/(?:장소|행사장|시설명)\\s*[:：]\\s*([^,|]+)/);if(named)return named[1].trim();
+ return raw;
+}
+function venueGroupKey(e){const place=normalizeEventText(venueDisplayName(e.place));if(/수원컨벤션센터|suwonconventioncenter/.test(place))return 'venue:suwon-convention';if(/스타필드/.test(place))return 'venue:starfield:'+(/안성/.test(place)?'anseong':/수원/.test(place)?'suwon':place);if(/어린이박물관|농업박물관/.test(place))return 'venue:museum:'+place;return 'venue:'+place}
+function groupEventsByVenue(items){const groups=new Map();for(const e of items){const key=venueGroupKey(e);if(!groups.has(key))groups.set(key,{key,place:venueDisplayName(e.place),address:e.place,events:[],lat:e.lat,lon:e.lon});groups.get(key).events.push(e)}return [...groups.values()]}
 function venueEventCard(e){return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'}
 function venueGroupCard(group){const events=group.events,first=events[0];return '<article class="card venue-group" style="margin:9px 0"><div class="favorite-card-top"><h3>'+escapeHtml(group.place)+'</h3><span class="tag green">'+events.length+'개 행사</span></div><div class="muted">📍 '+eventDistance(first.lat,first.lon).toFixed(1)+'km · 가까운 일정부터</div><div class="venue-events">'+events.map(venueEventCard).join('')+'</div></article>'}
 function eventKey(e){return normalizeEventText(e.title)+'|'+(e.startDate||'').slice(0,7)+'|'+normalizeEventText(e.place)}
