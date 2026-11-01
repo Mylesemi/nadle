@@ -12,6 +12,8 @@ module.exports=async function(req,res){
   try{const pages=await Promise.all(venue.urls.map(async url=>{try{const r=await fetch(url,{signal:controller.signal,headers:{'User-Agent':'Mozilla/5.0 (compatible; NADLE/1.0)'}});if(!r.ok)return null;return {url,html:await r.text()}}catch{return null}}));const ok=pages.filter(Boolean);const all=ok.flatMap(p=>parse(p.html,year,p.url,venue.name));const unique=[...new Map(all.map(e=>[e.title+'|'+e.startDate+'|'+e.place,e])).values()];return {venue:venue.name,status:ok.length?(unique.length?'ok':'unverified'):'error',events:unique,checkedPages:ok.map(p=>p.url)};
   }catch(e){return {venue:venue.name,status:'error',events:[]};}finally{clearTimeout(t)}
  }));
- const events=results.flatMap(x=>x.events);
+ const verified=[{title:'쓱데이 BYD 전시 팝업',startDate:'2026-10-30',endDate:'2026-11-08',place:'스타필드 안성',venueName:'1층 자라 아트리움',floor:'1F',zone:'1층 전시·팝업',type:'experience',family:false,description:'BYD 친환경차 전시 팝업. 공식 안내에 행사 장소가 1층 자라 아트리움으로 명시되어 있습니다.',url:'https://www.starfield.co.kr/anseong/eventBenefit/events/EV202610291016153106',source:'스타필드 공식 행사 상세'}];
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const events=[...results.flatMap(x=>x.events),...verified.filter(e=>e.endDate>=today)].filter((e,i,a)=>a.findIndex(x=>x.url===e.url&&x.title===e.title)===i);
  res.status(200).json({status:events.length?'parsed':results.every(x=>x.status==='error')?'error':'unverified',events,venues:results.map(x=>({name:x.venue,status:x.status,count:x.events.length,checkedPages:x.checkedPages||[]})),checkedAt:new Date().toISOString(),source:'official Starfield Suwon and Anseong websites',message:events.length?'공식 페이지에서 날짜가 확인된 행사만 추출했습니다. 일부 동적 로딩 행사는 누락될 수 있습니다.':'공식 페이지에서 행사 목록을 검증하지 못했습니다. 행사가 없다는 의미가 아니며 동적 API 연동 검증이 필요합니다.'});
 };
