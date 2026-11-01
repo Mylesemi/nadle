@@ -281,9 +281,9 @@ function groupEventsByVenue(items){const groups=new Map();for(const e of items){
 function venueEventCard(e){
  const desc=String(e.description||e.overview||'').replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim();
  const short=desc.length>155?desc.slice(0,155).replace(/\\s+\\S*$/,'')+'…':desc;
- const extra=desc?'<p style="margin:8px 0;line-height:1.65;color:var(--text,#344054);font-size:.92rem">'+escapeHtml(short)+'</p>':'<p class="muted" style="margin:7px 0">상세 소개가 제공되지 않은 행사입니다. 공식 안내에서 확인해 주세요.</p>';
+ const floor=e.floor?'<div class="muted">📍 '+escapeHtml(e.venueName||e.floor)+'</div>':'';\n const extra=desc?'<p style="margin:8px 0;line-height:1.65;color:var(--text,#344054);font-size:.92rem">'+escapeHtml(short)+'</p>':'<p class="muted" style="margin:7px 0">상세 소개가 제공되지 않은 행사입니다. 공식 안내에서 확인해 주세요.</p>';
  const detail=desc.length>155?'<details style="margin:6px 0 10px"><summary style="cursor:pointer;font-weight:600">행사 소개 전체 보기</summary><p style="line-height:1.7;white-space:pre-line">'+escapeHtml(desc)+'</p></details>':'';
- return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div>'+extra+detail+'<a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'
+ return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div>'+floor+extra+detail+'<a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'
 }
 function venueGroupCard(group){const events=group.events,first=events[0];return '<article class="card venue-group" style="margin:9px 0"><div class="favorite-card-top"><h3>'+escapeHtml(group.place)+'</h3><span class="tag green">'+events.length+'개 행사</span></div><div class="muted">📍 '+eventDistance(first.lat,first.lon).toFixed(1)+'km · 가까운 일정부터</div><div class="venue-events">'+events.map(venueEventCard).join('')+'</div></article>'}
 function eventKey(e){return normalizeEventText(e.title)+'|'+(e.startDate||'').slice(0,7)+'|'+normalizeEventText(e.place)}
@@ -332,7 +332,7 @@ function renderFavorites(){const root=$('eventsFavorites');if(!root)return;const
 
 function renderEvents(){
  const today=kstDate(),calendarActive=eventView==='calendar',calAnchor=calendarCursor||today,calStart=calendarMode==='week'?calendarMonday(calAnchor):calendarMonday(calendarMonthStart(calAnchor)),calEnd=dateAdd(calStart,calendarMode==='week'?6:41),from=calendarActive?calStart:($('eventFrom').value||today),until=calendarActive?calEnd:eventWindow(today),kind=$('eventType').value,family=$('eventFamily').checked;
- const rawSource=[...curatedEvents.filter(e=>!(sccStatus==='ok'&&e.place.includes('수원컨벤션센터'))),...sccEvents,...publicEvents,...nadleEvents.map(e=>({...e,type:'performance',family:false,lat:e.place&&e.place.includes('안성')?36.994:37.287,lon:e.place&&e.place.includes('안성')?127.147:127.001,source:'스타필드 공식 행사 자동 확인'}))];
+ const rawSource=[...curatedEvents.filter(e=>!(sccStatus==='ok'&&e.place.includes('수원컨벤션센터'))),...sccEvents,...publicEvents,...nadleEvents.map(e=>({...e,type:e.type==='experience'?'experience':e.type==='festival'?'festival':'performance',family:Boolean(e.family),lat:e.place&&e.place.includes('안성')?36.994:37.287,lon:e.place&&e.place.includes('안성')?127.147:127.001,source:e.source||'스타필드 공식 행사 자동 확인'}))];
  const source=expandRecurring(consolidateRecurring(uniqueEvents(rawSource)));
  const items=uniqueEvents(source).filter(e=>e.startDate&&e.endDate&&e.endDate>=today&&e.endDate>=from&&e.startDate<=until&&e.lat&&e.lon&&roadEligible(e.lat,e.lon)&&(kind==='all'||e.type===kind)).sort((a,b)=>{const aDate=a.startDate<today?today:a.startDate,bDate=b.startDate<today?today:b.startDate;return aDate.localeCompare(bDate)||((drivingKm(a.lat,a.lon)??eventDistance(a.lat,a.lon)*1.4)-(drivingKm(b.lat,b.lon)??eventDistance(b.lat,b.lon)*1.4))||a.title.localeCompare(b.title)});
  latestFavoriteEvents=uniqueEvents(source);
