@@ -278,12 +278,18 @@ function scheduleNearbyVenueLookup(events){
 }
 function venueGroupKey(e){const place=normalizeEventText(venueDisplayName(e.place,e));if(/수원컨벤션센터|suwonconventioncenter/.test(place))return 'venue:suwon-convention';if(/스타필드/.test(place))return 'venue:starfield:'+place;if(/어린이박물관|농업박물관/.test(place))return 'venue:museum:'+place;return 'venue:'+place}
 function groupEventsByVenue(items){const groups=new Map();for(const e of items){const key=venueGroupKey(e);if(!groups.has(key))groups.set(key,{key,place:venueDisplayName(e.place,e),address:e.place,events:[],lat:e.lat,lon:e.lon});groups.get(key).events.push(e)}return [...groups.values()]}
-function venueEventCard(e){return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div><a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'}
+function venueEventCard(e){
+ const desc=String(e.description||e.overview||'').replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim();
+ const short=desc.length>155?desc.slice(0,155).replace(/\\s+\\S*$/,'')+'…':desc;
+ const extra=desc?'<p style="margin:8px 0;line-height:1.65;color:var(--text,#344054);font-size:.92rem">'+escapeHtml(short)+'</p>':'<p class="muted" style="margin:7px 0">상세 소개가 제공되지 않은 행사입니다. 공식 안내에서 확인해 주세요.</p>';
+ const detail=desc.length>155?'<details style="margin:6px 0 10px"><summary style="cursor:pointer;font-weight:600">행사 소개 전체 보기</summary><p style="line-height:1.7;white-space:pre-line">'+escapeHtml(desc)+'</p></details>':'';
+ return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div>'+extra+detail+'<a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'
+}
 function venueGroupCard(group){const events=group.events,first=events[0];return '<article class="card venue-group" style="margin:9px 0"><div class="favorite-card-top"><h3>'+escapeHtml(group.place)+'</h3><span class="tag green">'+events.length+'개 행사</span></div><div class="muted">📍 '+eventDistance(first.lat,first.lon).toFixed(1)+'km · 가까운 일정부터</div><div class="venue-events">'+events.map(venueEventCard).join('')+'</div></article>'}
 function eventKey(e){return normalizeEventText(e.title)+'|'+(e.startDate||'').slice(0,7)+'|'+normalizeEventText(e.place)}
 function eventNear(a,b){const lat=(Number(a.lat)-Number(b.lat))*111,lon=(Number(a.lon)-Number(b.lon))*88;return Number.isFinite(lat)&&Number.isFinite(lon)&&Math.hypot(lat,lon)<0.45}
 function sameEvent(a,b){const an=normalizeEventText(a.title),bn=normalizeEventText(b.title);if(!an||!bn)return false;const titleMatch=an===bn||(Math.min(an.length,bn.length)>=8&&(an.includes(bn)||bn.includes(an)));if(!titleMatch)return false;const overlap=a.startDate<=b.endDate&&b.startDate<=a.endDate;const sameMonth=(a.startDate||'').slice(0,7)===(b.startDate||'').slice(0,7);const samePlace=normalizeEventText(a.place)===normalizeEventText(b.place)||eventNear(a,b);return (overlap||sameMonth)&&samePlace}
-function eventQuality(e){return (e.url&&/^https:\/\//.test(e.url)?3:0)+(e.source&&/공식/.test(e.source)?2:0)+(e.startTime?1:0)}
+function eventQuality(e){return (e.description||e.overview?8:0)+(e.url&&/^https:\/\//.test(e.url)?3:0)+(e.source&&/공식/.test(e.source)?2:0)+(e.startTime?1:0)}
 function uniqueEvents(events){const result=[];for(const e of events){if(!e||!e.title||!e.startDate||!e.endDate)continue;const idx=result.findIndex(x=>sameEvent(x,e));if(idx<0){result.push(e);continue}const prev=result[idx],best=eventQuality(e)>eventQuality(prev)?e:prev;result[idx]={...best,startDate:prev.startDate<e.startDate?prev.startDate:e.startDate,endDate:prev.endDate>e.endDate?prev.endDate:e.endDate}}return result}
 function placeKey(lat,lon){return Number(lat).toFixed(3)+','+Number(lon).toFixed(3)}
 function samePlaceCoordinates(a,b){const lat=(Number(a[0])-Number(b[0]))*111,lon=(Number(a[1])-Number(b[1]))*88;return Math.hypot(lat,lon)<0.35}
