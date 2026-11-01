@@ -13,5 +13,5 @@ module.exports=async function(req,res){
   }catch(e){return {venue:venue.name,status:'error',events:[]};}finally{clearTimeout(t)}
  }));
  const events=results.flatMap(x=>x.events);
- res.status(200).json({status:events.length?'parsed':results.every(x=>x.status==='error')?'error':'unverified',events,venues:results.map(x=>({name:x.venue,status:x.status,count:x.events.length})),checkedAt:new Date().toISOString(),source:'official Starfield Suwon and Anseong websites',message:events.length?'공식 페이지에서 날짜가 확인된 행사만 추출했습니다.':'공식 행사 날짜를 확인하지 못했습니다. 행사가 없다는 의미는 아닙니다.'});
+ res.status(200).json({status:events.length?'parsed':results.every(x=>x.status==='error')?'error':'unverified',events,venues:results.map(x=>({name:x.venue,status:x.status,count:x.events.length,checkedPages:x.checkedPages||[]})),checkedAt:new Date().toISOString(),source:'official Starfield Suwon and Anseong websites',message:events.length?'공식 페이지에서 날짜가 확인된 행사만 추출했습니다. 일부 동적 로딩 행사는 누락될 수 있습니다.':'공식 페이지에서 행사 목록을 검증하지 못했습니다. 행사가 없다는 의미가 아니며 동적 API 연동 검증이 필요합니다.'});
 };
