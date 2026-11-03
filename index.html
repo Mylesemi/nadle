@@ -280,9 +280,10 @@ function scheduleNearbyVenueLookup(events){
 function venueGroupKey(e){const place=normalizeEventText(venueDisplayName(e.place,e));if(/수원컨벤션센터|suwonconventioncenter/.test(place))return 'venue:suwon-convention';if(/스타필드/.test(place))return 'venue:starfield:'+place;if(/어린이박물관|농업박물관/.test(place))return 'venue:museum:'+place;return 'venue:'+place}
 function groupEventsByVenue(items){const groups=new Map();for(const e of items){const key=venueGroupKey(e);if(!groups.has(key))groups.set(key,{key,place:venueDisplayName(e.place,e),address:e.place,events:[],lat:e.lat,lon:e.lon});groups.get(key).events.push(e)}return [...groups.values()]}
 function venueEventCard(e){
- const desc=String(e.description||e.overview||'').replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim();
- const short=desc.length>155?desc.slice(0,155).replace(/\\s+\\S*$/,'')+'…':desc;
- const floor=e.floor?'<div class="muted">📍 '+escapeHtml(e.venueName||e.floor)+'</div>':'';\n const extra=desc?'<p style="margin:8px 0;line-height:1.65;color:var(--text,#344054);font-size:.92rem">'+escapeHtml(short)+'</p>':'<p class="muted" style="margin:7px 0">상세 소개가 제공되지 않은 행사입니다. 공식 안내에서 확인해 주세요.</p>';
+ const desc=String(e.description||e.overview||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+ const short=desc.length>155?desc.slice(0,155).replace(/\s+\S*$/,'')+'…':desc;
+ const floor=e.floor?'<div class="muted">📍 '+escapeHtml(e.venueName||e.floor)+'</div>':'';
+ const extra=desc?'<p style="margin:8px 0;line-height:1.65;color:var(--text,#344054);font-size:.92rem">'+escapeHtml(short)+'</p>':'<p class="muted" style="margin:7px 0">상세 소개가 제공되지 않은 행사입니다. 공식 안내에서 확인해 주세요.</p>';
  const detail=desc.length>155?'<details style="margin:6px 0 10px"><summary style="cursor:pointer;font-weight:600">행사 소개 전체 보기</summary><p style="line-height:1.7;white-space:pre-line">'+escapeHtml(desc)+'</p></details>':'';
  return '<div class="venue-event"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e)+'</div><div class="muted">'+escapeHtml(recurringSchedule(e))+'</div>'+floor+extra+detail+'<a href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a></div>'
 }
