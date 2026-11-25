@@ -358,7 +358,7 @@ const curatedEvents=[
 {title:'2026 화성행궁 야간개장',type:'experience',startDate:'2026-05-01',endDate:'2026-11-01',place:'수원 화성행궁',lat:37.281,lon:127.013, family:true,url:'https://www.suwon.go.kr/sw-www/sw-visitsuwon/sw-visitsuwon-03.jsp',source:'수원시 관광 안내'},
 {title:'세계유산 조선왕릉축전',type:'festival',startDate:'2026-10-17',endDate:'2026-10-25',place:'화성 융건릉',lat:37.212,lon:126.990,family:true,url:'https://web1.gg.go.kr/bbs/boardView.do?bIdx=263490602&bsIdx=838&menuId=1534',source:'경기도청 가을축제 안내'},
 {title:'2026 성남 테크아트 페스티벌',type:'festival',startDate:'2026-10-23',endDate:'2026-10-25',place:'성남 판교역 광장 일원',lat:37.394,lon:127.111,family:true,url:'https://web1.gg.go.kr/bbs/boardView.do?bIdx=263490602&bsIdx=838&menuId=1534',source:'경기도청 가을축제 안내'},
-{title:'안성 남사당바우덕이 상설공연',type:'performance',startDate:'2026-04-04',endDate:'2026-11-29',place:'안성 남사당 공연장',lat:37.008,lon:127.275,family:true,url:'https://www.anseong.go.kr/tour/main.do',source:'안성시 관광 안내 · 실제 공연 회차 별도 확인'},
+{title:'안성 남사당바우덕이 상설공연 ‘곰뱅이텄다’',type:'performance',startDate:'2026-04-04',endDate:'2026-11-29',startTime:'14:00',weekdays:[6,0],place:'안성 남사당 공연장',lat:37.03177,lon:127.31013,family:true,url:'https://english.visitkorea.or.kr/svc/contents/contentsView.do?vcontsId=104321',source:'한국관광공사 공식 공연 안내'},
 {title:'불취무귀야시장 시즌2',type:'festival',startDate:'2026-10-10',endDate:'2026-10-31',place:'수원 팔달문 일대',lat:37.277,lon:127.017,family:false,url:'https://www.suwon.go.kr/culture/index.do',source:'수원시 행사 안내 · 운영일 확인'}
 ];
 let driveLimit=50,roadDistances=new Map(),roadStatus='loading',roadRequest=0;
@@ -411,7 +411,7 @@ function formatEventDate(date){
  return (date.slice(0,4)===kstDate().slice(0,4)?'':date.slice(0,4)+'년 ')+parts.month+'/'+parts.day+'('+parts.weekday+')';
 }
 function scheduleLabel(e){
- return formatEventDate(e.startDate)+(e.startDate===e.endDate?'':' ~ '+formatEventDate(e.endDate))+(calendarTime(e)?' · '+calendarTime(e):'');
+ return formatEventDate(e.startDate)+(e.startDate===e.endDate?'':' ~ '+formatEventDate(e.endDate))+(e.weekdays?' · '+e.weekdays.map(day=>'일월화수목금토'[day]).join('·'):'')+(calendarTime(e)?(e.weekdays?' ':' · ')+calendarTime(e):'');
 }
 function recurringSchedule(e){return (e.occurrences||[e]).map(scheduleLabel).join(' · ')}
 function collapseRecurringForList(items){
@@ -429,6 +429,7 @@ function collapseRecurringForList(items){
  return result;
 }
 const VENUE_NAME_BY_ADDRESS=[
+ {pattern:/남사당로\s*198-2(?:\D|$)/,name:'안성 남사당 공연장'},
  {pattern:/예술공원로\s*180(?:\s*\(안양동\))?/,name:'안양 파빌리온'},
  {pattern:/도청로\s*(?:지하\s*)?36(?:번길)?(?:\D|$)/,name:'컬처라운지 경기'},
  {pattern:/수원컨벤션센터|suwon convention center/i,name:'수원컨벤션센터'}
@@ -543,6 +544,7 @@ function venueGroupCard(group){
 function eventTitleKey(e){
  const title=normalizeEventText(String(e.title||'').replace(/\s*(?:공식\s*홈페이지|행사\s*안내|축제\s*정보)[)\]]?\s*$/u,''));
  const venue=canonicalVenue(e.place);
+ if(venue==='안성남사당공연장'&&/^(?:안성)?남사당바우덕이(?:풍물단)?상설공연(?:곰뱅이텄다)?$/.test(title))return '남사당바우덕이상설공연';
  return /스타필드/.test(venue)&&title.startsWith(venue)&&title.length>venue.length?title.slice(venue.length):title;
 }
 function sameEventVenue(a,b){
@@ -586,6 +588,7 @@ function uniqueEvents(events){
    floor:preferred.floor||supplement.floor,
    venueName:preferred.venueName||supplement.venueName,
    startTime:calendarTime(preferred)||calendarTime(supplement),
+   weekdays:preferred.weekdays||supplement.weekdays,
    family:Boolean(preferred.family||supplement.family)
   };
  }
@@ -634,8 +637,8 @@ function toggleFavorite(id){
  else{
   const event=latestFavoriteEvents.find(e=>favoriteId(e)===id);
   if(!event)return;
-  const {title,place,startDate,endDate,url,type,lat,lon,source,startTime,time,floor,venueName,contentId}=event;
-  favorites[id]={title,place,startDate,endDate,url,type,lat,lon,source,startTime,time,floor,venueName,contentId};
+  const {title,place,startDate,endDate,url,type,lat,lon,source,startTime,time,weekdays,floor,venueName,contentId}=event;
+  favorites[id]={title,place,startDate,endDate,url,type,lat,lon,source,startTime,time,weekdays,floor,venueName,contentId};
  }
  try{localStorage.setItem(FAVORITES_KEY,JSON.stringify(favorites))}catch{}
  renderEvents();
@@ -709,7 +712,7 @@ function isRainyWeather(day){return day&&(day.rain>=55||[51,53,55,56,57,61,63,65
 function eventOutdoor(e){return /야외|공원|정원|숲|산책|거리|광장|캠핑|축제|불꽃|운동장|호수|플리마켓/.test((e.title||'')+' '+(e.place||''))&&e.type!=='performance'}
 function recommendedEvents(items,date){const day=weatherDay(date);if(!day)return items;const rainy=isRainyWeather(day);return [...items].sort((a,b)=>{const score=e=>rainy?(eventOutdoor(e)?0:1):(eventOutdoor(e)?1:0);return score(b)-score(a)})}
 let selectedCalendarDate=null;
-function calendarEventsForDate(items,date){return items.filter(e=>e.startDate<=date&&e.endDate>=date).sort((a,b)=>{const da=drivingKm(a.lat,a.lon)??eventDistance(a.lat,a.lon)*1.4,db=drivingKm(b.lat,b.lon)??eventDistance(b.lat,b.lon)*1.4;return da-db||a.title.localeCompare(b.title)})}
+function calendarEventsForDate(items,date){return items.filter(e=>e.startDate<=date&&e.endDate>=date&&(!e.weekdays||e.weekdays.includes(new Date(date+'T12:00:00Z').getUTCDay()))).sort((a,b)=>{const da=drivingKm(a.lat,a.lon)??eventDistance(a.lat,a.lon)*1.4,db=drivingKm(b.lat,b.lon)??eventDistance(b.lat,b.lon)*1.4;return da-db||a.title.localeCompare(b.title)})}
 function selectCalendarDate(date){selectedCalendarDate=date;if(date.slice(0,7)!==calendarCursor.slice(0,7)&&calendarMode==='month')calendarCursor=date;renderEvents()}
 function renderEventsCalendar(items){
  const root=$('eventsCalendar');if(!root)return;
