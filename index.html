@@ -295,6 +295,7 @@ const facilityPositions={marineSafety:[37.292,126.581],scc:[37.2851,127.0571],an
 let nadleMap=null,nadleLayer=null,mapCategory='all';
 let mapAutoFit=true,mapFitting=false,lastMapExtent='',mapLabelFrame=0;
 let mapEvents=[],lastMapPins='',mapTileError=false;
+const nadleMarkers=new Map();
 
 function scheduleMapLabels(){
  if(mapLabelFrame)return;
@@ -345,20 +346,25 @@ function syncNadleMap(){
  if(!nadleMap||!nadleLayer)return;
  const query=$('mapSearch').value.trim().toLowerCase();
  const matches=text=>!query||text.toLowerCase().includes(query);
- const pins=facilities.map(f=>({facility:f,place:f.name,position:facilityPositions[f.id],kind:f.kind,events:[]}));
+ const pins=facilities.map(f=>({key:'facility:'+f.id,facility:f,place:f.name,position:facilityPositions[f.id],kind:f.kind,events:[]}));
  for(const group of groupEventsByVenue(collapseRecurringForList(mapEvents))){
   const known=pins.find(pin=>pin.facility&&sameEventVenue(
    {place:pin.place,lat:pin.position[0],lon:pin.position[1]},group.events[0]));
   if(known){known.events.push(...group.events);continue}
   const first=group.events[0];
-  pins.push({place:group.place,position:[first.lat,first.lon],kind:eventOutdoor(first)?'outdoor':'experience',events:group.events});
+  pins.push({key:'venue:'+venueGroupKey(first),place:group.place,position:[first.lat,first.lon],kind:eventOutdoor(first)?'outdoor':'experience',events:group.events});
  }
  const visible=pins.filter(pin=>(mapCategory==='all'||pin.kind===mapCategory)&&roadEligible(...pin.position)
   &&matches([pin.place,pin.facility?.area,pin.facility?.note,...pin.events.map(e=>e.title)].filter(Boolean).join(' ')));
  const signature=JSON.stringify(visible);
  if(signature!==lastMapPins){
   lastMapPins=signature;
-  nadleLayer.clearLayers();
+  const keys=new Set(visible.map(pin=>pin.key));
+  for(const [key,{marker}] of nadleMarkers){
+   if(keys.has(key))continue;
+   nadleLayer.removeLayer(marker);
+   nadleMarkers.delete(key);
+  }
   for(const pin of visible){
    const {facility,place,position,kind,events}=pin;
    const eventCount=events.length;
@@ -368,11 +374,21 @@ function syncNadleMap(){
    const official=facility?.url?'<a href="'+escapeHtml(facility.url)+'" target="_blank" rel="noopener noreferrer">장소 공식 안내 ↗</a>':'';
    const directions='<a href="'+escapeHtml(mapUrl(place))+'" target="_blank" rel="noopener noreferrer">길찾기 ↗</a>';
    const title=place+(eventCount?' · 행사 '+eventCount+'건':'');
-   const marker=L.marker(position,{
-    icon:L.divIcon({className:'map-pin '+kind,html,iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-13]}),
-    title,riseOnHover:true
-   }).bindPopup('<div class="map-popup"><h3>'+name+'</h3><div class="map-popup-links">'+official+directions+'</div>'+links+'</div>',{maxHeight:300}).addTo(nadleLayer);
+   const popup='<div class="map-popup"><h3>'+name+'</h3><div class="map-popup-links">'+official+directions+'</div>'+links+'</div>';
+   const previous=nadleMarkers.get(pin.key);
+   const icon=()=>L.divIcon({className:'map-pin '+kind,html,iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-13]});
+   let marker=previous?.marker;
+   if(marker){
+    if(!marker.getLatLng().equals(position))marker.setLatLng(position);
+    if(previous.popup!==popup)marker.setPopupContent(popup);
+    if(previous.kind!==kind||previous.html!==html)marker.setIcon(icon());
+   }else{
+    marker=L.marker(position,{icon:icon(),title,riseOnHover:true}).bindPopup(popup,{maxHeight:300}).addTo(nadleLayer);
+   }
+   marker.options.title=title;
+   marker.getElement().title=title;
    marker.getElement().setAttribute('aria-label',title);
+   nadleMarkers.set(pin.key,{marker,html,kind,popup});
   }
   scheduleMapLabels();
  }
@@ -458,7 +474,7 @@ async function refreshRoadDistances(){
   }catch(e){}finally{clearTimeout(timer)}
  }
  if(seq!==roadRequest)return;
- roadDistances=result;roadStatus=success?'ready':'error';render();
+ roadDistances=result;roadStatus=success===unique.length?'ready':success?'partial':'error';render();
 }
 function normalizeEventText(value){
  return String(value||'').normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]/g,'');
@@ -605,7 +621,7 @@ function eventBadges(e){
 function venueEventCard(e){
  const title=recurringDisplayTitle(e);
  const description=String(e.description||e.overview||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
- const intro=description?'<details class="event-description"><summary>행사 소개</summary><p>'+escapeHtml(description)+'</p></details>':'';
+ const intro=description?'<details class="event-description" data-event-section="'+inlineId(favoriteId(e))+'"><summary>행사 소개</summary><p>'+escapeHtml(description)+'</p></details>':'';
  const detail=e.venueName||e.floor;
  const schedules=(e.occurrences||[e]).map(o=>'<li>'+escapeHtml(scheduleLabel(o))+'</li>').join('');
  return '<article class="venue-event"><div class="event-card-top"><div class="event-badges">'+eventBadges(e)
@@ -738,7 +754,18 @@ function toggleFavorite(id){
 let latestFavoriteEvents=[];
 function saveApplicationDate(encoded,date,time){const id=decodeURIComponent(encoded);if(!favorites[id])return;favorites[id].applyDate=date;favorites[id].applyTime=time||'09:00';try{localStorage.setItem(FAVORITES_KEY,JSON.stringify(favorites))}catch(e){}renderFavorites()}
 function applicationReminder(encoded){const id=decodeURIComponent(encoded),e=favorites[id];if(!e||!/^\d{4}-\d{2}-\d{2}$/.test(e.applyDate||''))return;const t=/^\d{2}:\d{2}$/.test(e.applyTime||'')?e.applyTime:'09:00';const start=e.applyDate.replace(/-/g,'')+'T'+t.replace(':','')+'00';const esc=x=>String(x||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//NADLE//Application Reminder//KO','CALSCALE:GREGORIAN','BEGIN:VEVENT','UID:'+Date.now()+'-'+Math.random().toString(36).slice(2)+'@nadle','DTSTAMP:'+new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'').replace('Z','Z'),'DTSTART;TZID=Asia/Seoul:'+start,'DURATION:PT30M','SUMMARY:'+esc('신청 알림 · '+e.title),'DESCRIPTION:'+esc('신청 페이지: '+(e.url||'')+'\\nNADLE 즐겨찾기에서 등록한 신청일입니다.'),'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:신청 하루 전 알림','END:VALARM','BEGIN:VALARM','TRIGGER:-PT1H','ACTION:DISPLAY','DESCRIPTION:신청 1시간 전 알림','END:VALARM','END:VEVENT','END:VCALENDAR'];const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/calendar;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='nadle-application-'+e.applyDate+'.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function renderFavorites(){const root=$('eventsFavorites');if(!root)return;const saved=Object.entries(favorites).sort((a,b)=>(a[1].applyDate||a[1].startDate).localeCompare(b[1].applyDate||b[1].startDate));$('favoriteCount').textContent=saved.length;root.innerHTML=saved.length?'<p class="statusline">신청 시작일과 시간을 직접 입력한 뒤 <b>알림 캘린더 저장</b>을 누르세요. 휴대폰 캘린더에 추가하면 하루 전·1시간 전 알림을 받을 수 있습니다. NADLE 자체 푸시 알림은 아닙니다.</p>'+saved.map(([id,e])=>{const encoded=inlineId(id);return '<article class="card favorite-card"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e,id)+'</div><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(scheduleLabel(e))+'</div><div class="apply-reminder"><label>신청 시작일 <input type="date" value="'+escapeHtml(e.applyDate||'')+'" onchange="saveApplicationDate(\''+encoded+'\',this.value,this.parentElement.nextElementSibling.querySelector(\'input\').value)"></label><label>신청 시간 <input type="time" value="'+escapeHtml(e.applyTime||'09:00')+'" onchange="saveApplicationDate(\''+encoded+'\',this.parentElement.previousElementSibling.querySelector(\'input\').value,this.value)"></label><button type="button" '+(e.applyDate?'':'disabled')+' onclick="applicationReminder(\''+encoded+'\')">🔔 알림 캘린더 저장</button></div><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 신청·안내 ↗</a></article>'}).join(''):'<div class="notice">저장한 행사가 없습니다. 행사 목록이나 달력에서 ☆ 저장을 눌러보세요.</div>'}
+function renderFavorites(){const root=$('eventsFavorites');if(!root)return;const saved=Object.entries(favorites).sort((a,b)=>(a[1].applyDate||a[1].startDate).localeCompare(b[1].applyDate||b[1].startDate));$('favoriteCount').textContent=saved.length;updateEventMarkup(root,saved.length?'<p class="statusline">신청 시작일과 시간을 직접 입력한 뒤 <b>알림 캘린더 저장</b>을 누르세요. 휴대폰 캘린더에 추가하면 하루 전·1시간 전 알림을 받을 수 있습니다. NADLE 자체 푸시 알림은 아닙니다.</p>'+saved.map(([id,e])=>{const encoded=inlineId(id);return '<article class="card favorite-card"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e,id)+'</div><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(scheduleLabel(e))+'</div><div class="apply-reminder"><label>신청 시작일 <input type="date" value="'+escapeHtml(e.applyDate||'')+'" onchange="saveApplicationDate(\''+encoded+'\',this.value,this.parentElement.nextElementSibling.querySelector(\'input\').value)"></label><label>신청 시간 <input type="time" value="'+escapeHtml(e.applyTime||'09:00')+'" onchange="saveApplicationDate(\''+encoded+'\',this.parentElement.previousElementSibling.querySelector(\'input\').value,this.value)"></label><button type="button" '+(e.applyDate?'':'disabled')+' onclick="applicationReminder(\''+encoded+'\')">🔔 알림 캘린더 저장</button></div><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 신청·안내 ↗</a></article>'}).join(''):'<div class="notice">저장한 행사가 없습니다. 행사 목록이나 달력에서 ☆ 저장을 눌러보세요.</div>')}
+
+const eventMarkup=new WeakMap();
+function updateEventMarkup(root,html){
+ if(eventMarkup.get(root)===html)return;
+ const openSections=new Set([...root.querySelectorAll('details[open][data-event-section]')].map(section=>section.dataset.eventSection));
+ root.innerHTML=html;
+ eventMarkup.set(root,html);
+ for(const section of root.querySelectorAll('details[data-event-section]')){
+  if(openSections.has(section.dataset.eventSection))section.open=true;
+ }
+}
 
 function renderEvents(){
  const today=kstDate(),from=$('eventFrom').value||today,until=eventWindow(from),mapUntil=dateAdd(today,29),kind=$('eventType').value;
@@ -750,21 +777,21 @@ function renderEvents(){
  }));
  const source=uniqueEvents([...curatedEvents,...sccEvents,...publicEvents,...starfield]);
  latestFavoriteEvents=source;
- const upcoming=source.filter(e=>e.endDate>=today&&Number.isFinite(e.lat)&&Number.isFinite(e.lon));
- const visible=upcoming.filter(e=>roadEligible(e.lat,e.lon)&&(kind==='all'||e.type===kind)).sort((a,b)=>{
+ const located=source.filter(e=>Number.isFinite(e.lat)&&Number.isFinite(e.lon));
+ const visible=located.filter(e=>roadEligible(e.lat,e.lon)&&(kind==='all'||e.type===kind)).sort((a,b)=>{
   const aDate=a.startDate<from?from:a.startDate,bDate=b.startDate<from?from:b.startDate;
   return aDate.localeCompare(bDate)||eventDistance(a.lat,a.lon)-eventDistance(b.lat,b.lon)||a.title.localeCompare(b.title);
  });
- mapEvents=upcoming.filter(e=>e.startDate<=mapUntil);
+ mapEvents=located.filter(e=>e.endDate>=today&&e.startDate<=mapUntil);
  const listItems=collapseRecurringForList(visible.filter(e=>e.endDate>=from&&e.startDate<=until));
  const venueGroups=groupEventsByVenue(listItems);
  scheduleNearbyVenueLookup(listItems);
  $('eventCount').textContent=venueGroups.length+'곳 · 행사 '+listItems.length+'건 · 자동차 '+driveLimit+'km';
- $('eventsList').innerHTML=venueGroups.length?venueGroups.map(venueGroupCard).join('')
-  :'<p class="event-empty">이 기간에 표시할 행사가 없어요. 날짜나 기간을 바꿔 보세요.</p>';
- const status=[roadStatus==='loading'?'주행거리 확인 중':roadStatus==='error'?'주행거리 조회 실패 · 직선거리로 범위 추정':'서천 힐스테이트 기준',
-  '스타필드 '+starfieldStatus,'수원컨벤션센터 '+(sccStatus==='ok'?'조회 '+sccEvents.length+'건':sccStatus==='error'?'조회 실패':'확인된 일정 없음'),
-  ...publicSources.map(entry=>entry.name+' '+(entry.status==='ok'?entry.count+'건':entry.status==='needs_key'?'미연동':'조회 실패'))];
+ updateEventMarkup($('eventsList'),venueGroups.length?venueGroups.map(venueGroupCard).join('')
+  :'<p class="event-empty">이 기간에 표시할 행사가 없어요. 날짜나 기간을 바꿔 보세요.</p>');
+ const status=[{loading:'주행거리 확인 중',partial:'주행거리 일부 미확인 · 직선거리로 범위 추정',error:'주행거리 조회 실패 · 직선거리로 범위 추정',ready:'서천 힐스테이트 기준'}[roadStatus],
+  '스타필드 '+starfieldStatus,'수원컨벤션센터 '+(sccStatus==='ok'?'조회 '+sccEvents.length+'건':sccStatus==='error'?'조회 실패'+(sccEvents.length?' · 이전 결과 표시':''):'확인된 일정 없음'),
+  ...publicSources.map(entry=>entry.name+' '+(entry.status==='ok'?entry.count+'건':entry.status==='needs_key'?'미연동':'조회 실패'+(publicEvents.length?' · 이전 결과 표시':'')))];
  if(eventCheckedAt)status.push('마지막 조회 '+new Date(eventCheckedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}));
  $('eventStatus').textContent=status.join(' · ');
  $('refreshEventsBtn').disabled=eventStatus==='loading';
@@ -805,7 +832,7 @@ function eventOutdoor(e){return /야외|공원|정원|숲|산책|거리|광장|�
 function recommendedEvents(items,date){const day=weatherDay(date);if(!day)return items;const rainy=isRainyWeather(day);return [...items].sort((a,b)=>{const score=e=>rainy?(eventOutdoor(e)?0:1):(eventOutdoor(e)?1:0);return score(b)-score(a)})}
 let selectedCalendarDate=null;
 function calendarEventsForDate(items,date){return items.filter(e=>e.startDate<=date&&e.endDate>=date&&(!e.weekdays||e.weekdays.includes(new Date(date+'T12:00:00Z').getUTCDay()))).sort((a,b)=>{const da=drivingKm(a.lat,a.lon)??eventDistance(a.lat,a.lon)*1.4,db=drivingKm(b.lat,b.lon)??eventDistance(b.lat,b.lon)*1.4;return da-db||a.title.localeCompare(b.title)})}
-function selectCalendarDate(date){selectedCalendarDate=date;if(date.slice(0,7)!==calendarCursor.slice(0,7)&&calendarMode==='month')calendarCursor=date;renderEvents()}
+function selectCalendarDate(date){selectedCalendarDate=date;calendarCursor=date;renderEvents()}
 function renderEventsCalendar(items){
  const root=$('eventsCalendar');if(!root)return;
  if(!calendarCursor)calendarCursor=kstDate();
@@ -828,8 +855,8 @@ function renderEventsCalendar(items){
   +(forecast?'<div class="cal-weather-tip">'+escapeHtml(weatherLabel(forecast))+' · '+(isRainyWeather(forecast)?'실내 행사 우선':'야외 행사 우선')+'</div>':'');
  const rows=recommendedEvents(selected,selectedCalendarDate).map(calendarEventRow);
  html+=rows.length?rows.slice(0,3).join(''):'<p class="cal-empty">이 날짜에 표시할 행사가 없어요.</p>';
- if(rows.length>3)html+='<details class="cal-more-events"><summary>나머지 '+(rows.length-3)+'건 보기</summary>'+rows.slice(3).join('')+'</details>';
- root.innerHTML=html+'</div>';
+ if(rows.length>3)html+='<details class="cal-more-events" data-event-section="'+selectedCalendarDate+'"><summary>나머지 '+(rows.length-3)+'건 보기</summary>'+rows.slice(3).join('')+'</details>';
+ updateEventMarkup(root,html+'</div>');
 }
 function calendarEventRow(e){
  const time=calendarTime(e);
@@ -870,6 +897,12 @@ for(const tablist of document.querySelectorAll('[role=tablist]')){
 }
 $('eventFrom').value=kstDate();
 ['eventFrom','eventType','eventFamily','eventRange'].forEach(id=>$(id).addEventListener('change',renderEvents));
+function validFeedEvent(e,needsCoordinates=true){
+ const iso=/^\d{4}-\d{2}-\d{2}$/;
+ return typeof e?.title==='string'&&e.title.trim()&&iso.test(e.startDate)&&iso.test(e.endDate)
+  &&e.startDate<=e.endDate&&/^https:\/\//.test(e.url||'')
+  &&(!needsCoordinates||Number.isFinite(e.lat)&&Number.isFinite(e.lon));
+}
 async function refreshEvents(){
  if(eventStatus==='loading')return;
  eventStatus='loading';renderEvents();
@@ -880,13 +913,24 @@ async function refreshEvents(){
  fetch('/api/public-events?t='+Date.now(),{cache:'no-store',signal:controller.signal}).then(r=>{if(!r.ok)throw Error('public');return r.json()}),
  fetch('/api/scc-events?t='+Date.now(),{cache:'no-store',signal:controller.signal}).then(r=>{if(!r.ok)throw Error('scc');return r.json()})
  ]);
- if(star.status==='fulfilled'){
-  const j=star.value;
-  if(j.status!=='error')nadleEvents=Array.isArray(j.events)?j.events.filter(e=>e.title&&e.startDate&&e.endDate&&/^https:\/\//.test(e.url)):[];
-  starfieldStatus=j.status==='error'?'조회 실패':nadleEvents.length?'조회 '+nadleEvents.length+'건':'확인된 일정 없음';
- }else starfieldStatus='조회 실패';
- if(publicResult.status==='fulfilled'){const j=publicResult.value;publicEvents=Array.isArray(j.events)?j.events.filter(e=>e.title&&e.startDate&&e.endDate&&Number.isFinite(e.lat)&&Number.isFinite(e.lon)&&/^https:\/\//.test(e.url)):[];publicSources=Array.isArray(j.sources)?j.sources:[]}
- if(sccResult.status==='fulfilled'){const j=sccResult.value;sccStatus=j.status||'unverified';sccEvents=Array.isArray(j.events)?j.events.filter(e=>e.title&&e.startDate&&e.endDate&&Number.isFinite(e.lat)&&Number.isFinite(e.lon)&&/^https:\/\//.test(e.url)):[]}else{sccStatus='error';sccEvents=[]}
+ const starData=star.status==='fulfilled'?star.value:null;
+ if(starData?.status!=='error'&&Array.isArray(starData?.events)){
+  const venues=Array.isArray(starData.venues)?starData.venues:[];
+  const failedVenues=new Set(venues.filter(venue=>venue?.status==='error').map(venue=>venue.name));
+  const retained=nadleEvents.filter(e=>failedVenues.has(e.place));
+  const fresh=starData.events.filter(e=>validFeedEvent(e,false));
+  nadleEvents=[...fresh,...retained];
+  starfieldStatus=failedVenues.size?'일부 조회 실패'+(retained.length?' · 이전 결과 표시':'')
+   :fresh.length?'조회 '+fresh.length+'건':'확인된 일정 없음';
+ }else starfieldStatus='조회 실패'+(nadleEvents.length?' · 이전 결과 표시':'');
+ const publicData=publicResult.status==='fulfilled'?publicResult.value:null;
+ publicSources=Array.isArray(publicData?.sources)?publicData.sources:[{name:'TourAPI 축제',status:'error'}];
+ if(Array.isArray(publicData?.events)&&!publicSources.some(source=>source.status==='error')){
+  publicEvents=publicData.events.filter(e=>validFeedEvent(e));
+ }
+ const sccData=sccResult.status==='fulfilled'?sccResult.value:null;
+ sccStatus=Array.isArray(sccData?.events)?sccData.status||'unverified':'error';
+ if(sccStatus!=='error')sccEvents=sccData.events.filter(e=>validFeedEvent(e));
  eventStatus=star.status==='rejected'&&publicResult.status==='rejected'&&sccResult.status==='rejected'?'error':'parsed';
  eventCheckedAt=new Date().toISOString();
  }catch(e){eventStatus='error'}finally{clearTimeout(timer)}
