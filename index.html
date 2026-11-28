@@ -224,6 +224,7 @@ footer { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 15px 0
       <div class="map-focus">
         <div class="map-options" role="group" aria-label="자동차 이동거리">
           <button type="button" id="drive10" aria-pressed="false">10km</button>
+          <button type="button" id="drive30" aria-pressed="false">30km</button>
           <button type="button" id="drive50" class="active" aria-pressed="true">50km</button>
         </div>
         <div class="map-options" role="group" aria-label="지도 이동">
@@ -698,11 +699,13 @@ function uniqueEvents(events){
  }
  return result;
 }
-$('drive10').onclick=()=>setDriveLimit(10);
-$('drive50').onclick=()=>setDriveLimit(50);
+const driveLimits=[10,30,50];
+for(const distance of driveLimits){
+ $('drive'+distance).onclick=()=>setDriveLimit(distance);
+}
 function setDriveLimit(km){
  driveLimit=km;
- for(const distance of [10,50]){
+ for(const distance of driveLimits){
   $('drive'+distance).classList.toggle('active',distance===km);
   $('drive'+distance).setAttribute('aria-pressed',String(distance===km));
  }
