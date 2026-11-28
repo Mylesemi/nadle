@@ -606,9 +606,21 @@ function groupEventsByVenue(items){
  return [...groups.values()];
 }
 function eventKindLabel(e){return {festival:'축제',performance:'공연',experience:'체험·전시'}[e.type]||'행사'}
-function eventGuideLink(e,primary=false){
- if(!/^https:\/\//.test(e.url||''))return '';
- return '<a class="event-guide'+(primary?' event-guide-primary':'')+'" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a>';
+function eventPage(e){
+ const url=e.url||'';
+ const home=/^https:\/\/(?:www\.|korean\.)?visitkorea\.or\.kr(?:\/main\/main\.do|\/)?(?:[?#].*)?$/i.test(url);
+ if(!home&&e.guideKind!=='search')return e;
+ const detail=e.contentId&&publicEvents.find(item=>item.contentId===e.contentId&&item.startDate===e.startDate&&item.guideKind==='detail');
+ if(detail)return detail;
+ if(!home)return e;
+ return {url:'https://korean.visitkorea.or.kr/search/search_list.do?keyword='+encodeURIComponent(e.title),guideKind:'search'};
+}
+function eventGuideLink(e,style){
+ const {url,guideKind}=eventPage(e);
+ if(!/^https:\/\//.test(url||''))return '';
+ const classes=style==='favorite'?'btn primary':'event-guide'+(style==='primary'?' event-guide-primary':'');
+ const label=guideKind==='search'?'행사명으로 검색':guideKind==='detail'?'공식 상세':style==='favorite'?'공식 신청·안내':'공식 안내';
+ return '<a class="'+classes+'" href="'+escapeHtml(url)+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>';
 }
 function eventDistanceLabel(e){
  const road=drivingKm(e.lat,e.lon);
@@ -626,7 +638,7 @@ function venueEventCard(e){
  const schedules=(e.occurrences||[e]).map(o=>'<li>'+escapeHtml(scheduleLabel(o))+'</li>').join('');
  return '<article class="venue-event"><div class="event-card-top"><div class="event-badges">'+eventBadges(e)
   +'</div>'+favoriteButton(e)+'</div><h4>'+escapeHtml(title)+'</h4><ul class="event-schedules">'+schedules+'</ul>'
-  +(detail?'<p class="event-location">'+escapeHtml(detail)+'</p>':'')+intro+eventGuideLink(e,true)+'</article>';
+  +(detail?'<p class="event-location">'+escapeHtml(detail)+'</p>':'')+intro+eventGuideLink(e,'primary')+'</article>';
 }
 function venueGroupCard(group){
  return '<section class="venue-group"><div class="venue-heading"><h3>'+escapeHtml(group.place)
@@ -745,16 +757,16 @@ function toggleFavorite(id){
  else{
   const event=latestFavoriteEvents.find(e=>favoriteId(e)===id);
   if(!event)return;
-  const {title,place,startDate,endDate,url,type,lat,lon,source,startTime,time,weekdays,floor,venueName,contentId}=event;
-  favorites[id]={title,place,startDate,endDate,url,type,lat,lon,source,startTime,time,weekdays,floor,venueName,contentId};
+  const {title,place,startDate,endDate,url,guideKind,type,lat,lon,source,startTime,time,weekdays,floor,venueName,contentId}=event;
+  favorites[id]={title,place,startDate,endDate,url,guideKind,type,lat,lon,source,startTime,time,weekdays,floor,venueName,contentId};
  }
  try{localStorage.setItem(FAVORITES_KEY,JSON.stringify(favorites))}catch{}
  renderEvents();
 }
 let latestFavoriteEvents=[];
 function saveApplicationDate(encoded,date,time){const id=decodeURIComponent(encoded);if(!favorites[id])return;favorites[id].applyDate=date;favorites[id].applyTime=time||'09:00';try{localStorage.setItem(FAVORITES_KEY,JSON.stringify(favorites))}catch(e){}renderFavorites()}
-function applicationReminder(encoded){const id=decodeURIComponent(encoded),e=favorites[id];if(!e||!/^\d{4}-\d{2}-\d{2}$/.test(e.applyDate||''))return;const t=/^\d{2}:\d{2}$/.test(e.applyTime||'')?e.applyTime:'09:00';const start=e.applyDate.replace(/-/g,'')+'T'+t.replace(':','')+'00';const esc=x=>String(x||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//NADLE//Application Reminder//KO','CALSCALE:GREGORIAN','BEGIN:VEVENT','UID:'+Date.now()+'-'+Math.random().toString(36).slice(2)+'@nadle','DTSTAMP:'+new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'').replace('Z','Z'),'DTSTART;TZID=Asia/Seoul:'+start,'DURATION:PT30M','SUMMARY:'+esc('신청 알림 · '+e.title),'DESCRIPTION:'+esc('신청 페이지: '+(e.url||'')+'\\nNADLE 즐겨찾기에서 등록한 신청일입니다.'),'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:신청 하루 전 알림','END:VALARM','BEGIN:VALARM','TRIGGER:-PT1H','ACTION:DISPLAY','DESCRIPTION:신청 1시간 전 알림','END:VALARM','END:VEVENT','END:VCALENDAR'];const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/calendar;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='nadle-application-'+e.applyDate+'.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function renderFavorites(){const root=$('eventsFavorites');if(!root)return;const saved=Object.entries(favorites).sort((a,b)=>(a[1].applyDate||a[1].startDate).localeCompare(b[1].applyDate||b[1].startDate));$('favoriteCount').textContent=saved.length;updateEventMarkup(root,saved.length?'<p class="statusline">신청 시작일과 시간을 직접 입력한 뒤 <b>알림 캘린더 저장</b>을 누르세요. 휴대폰 캘린더에 추가하면 하루 전·1시간 전 알림을 받을 수 있습니다. NADLE 자체 푸시 알림은 아닙니다.</p>'+saved.map(([id,e])=>{const encoded=inlineId(id);return '<article class="card favorite-card"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e,id)+'</div><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(scheduleLabel(e))+'</div><div class="apply-reminder"><label>신청 시작일 <input type="date" value="'+escapeHtml(e.applyDate||'')+'" onchange="saveApplicationDate(\''+encoded+'\',this.value,this.parentElement.nextElementSibling.querySelector(\'input\').value)"></label><label>신청 시간 <input type="time" value="'+escapeHtml(e.applyTime||'09:00')+'" onchange="saveApplicationDate(\''+encoded+'\',this.parentElement.previousElementSibling.querySelector(\'input\').value,this.value)"></label><button type="button" '+(e.applyDate?'':'disabled')+' onclick="applicationReminder(\''+encoded+'\')">🔔 알림 캘린더 저장</button></div><a class="btn primary" href="'+escapeHtml(e.url)+'" target="_blank" rel="noopener noreferrer">공식 신청·안내 ↗</a></article>'}).join(''):'<div class="notice">저장한 행사가 없습니다. 행사 목록이나 달력에서 ☆ 저장을 눌러보세요.</div>')}
+function applicationReminder(encoded){const id=decodeURIComponent(encoded),e=favorites[id];if(!e||!/^\d{4}-\d{2}-\d{2}$/.test(e.applyDate||''))return;const t=/^\d{2}:\d{2}$/.test(e.applyTime||'')?e.applyTime:'09:00';const start=e.applyDate.replace(/-/g,'')+'T'+t.replace(':','')+'00';const esc=x=>String(x||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//NADLE//Application Reminder//KO','CALSCALE:GREGORIAN','BEGIN:VEVENT','UID:'+Date.now()+'-'+Math.random().toString(36).slice(2)+'@nadle','DTSTAMP:'+new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'').replace('Z','Z'),'DTSTART;TZID=Asia/Seoul:'+start,'DURATION:PT30M','SUMMARY:'+esc('신청 알림 · '+e.title),'DESCRIPTION:'+esc('행사 안내: '+(eventPage(e).url||'')+'\\nNADLE 즐겨찾기에서 등록한 신청일입니다.'),'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:신청 하루 전 알림','END:VALARM','BEGIN:VALARM','TRIGGER:-PT1H','ACTION:DISPLAY','DESCRIPTION:신청 1시간 전 알림','END:VALARM','END:VEVENT','END:VCALENDAR'];const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/calendar;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='nadle-application-'+e.applyDate+'.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function renderFavorites(){const root=$('eventsFavorites');if(!root)return;const saved=Object.entries(favorites).sort((a,b)=>(a[1].applyDate||a[1].startDate).localeCompare(b[1].applyDate||b[1].startDate));$('favoriteCount').textContent=saved.length;updateEventMarkup(root,saved.length?'<p class="statusline">신청 시작일과 시간을 직접 입력한 뒤 <b>알림 캘린더 저장</b>을 누르세요. 휴대폰 캘린더에 추가하면 하루 전·1시간 전 알림을 받을 수 있습니다. NADLE 자체 푸시 알림은 아닙니다.</p>'+saved.map(([id,e])=>{const encoded=inlineId(id);return '<article class="card favorite-card"><div class="favorite-card-top"><strong>'+escapeHtml(recurringDisplayTitle(e))+'</strong>'+favoriteButton(e,id)+'</div><div class="muted">'+escapeHtml(e.place)+' · '+escapeHtml(scheduleLabel(e))+'</div><div class="apply-reminder"><label>신청 시작일 <input type="date" value="'+escapeHtml(e.applyDate||'')+'" onchange="saveApplicationDate(\''+encoded+'\',this.value,this.parentElement.nextElementSibling.querySelector(\'input\').value)"></label><label>신청 시간 <input type="time" value="'+escapeHtml(e.applyTime||'09:00')+'" onchange="saveApplicationDate(\''+encoded+'\',this.parentElement.previousElementSibling.querySelector(\'input\').value,this.value)"></label><button type="button" '+(e.applyDate?'':'disabled')+' onclick="applicationReminder(\''+encoded+'\')">🔔 알림 캘린더 저장</button></div>'+eventGuideLink(e,'favorite')+'</article>'}).join(''):'<div class="notice">저장한 행사가 없습니다. 행사 목록이나 달력에서 ☆ 저장을 눌러보세요.</div>')}
 
 const eventMarkup=new WeakMap();
 function updateEventMarkup(root,html){
